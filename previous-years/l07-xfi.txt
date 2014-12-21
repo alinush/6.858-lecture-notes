@@ -1,0 +1,218 @@
+XFI
+===
+
+questions on lab 2?
+
+what's this paper trying to achieve?
+    run legacy x86 binary code safely
+    "safely" defined by P1..P7 in paper
+
+what are the potential uses?
+    plugins (device drivers, media codecs, browser plugins, ..)
+    hardening existing applications (httpd from lab 1?)
+    running untrusted code downloaded from some web site
+	what sorts of things would or would not XFI solve?
+    "mobile code", as in last lecture
+	x86 instead of javascript in the browser?
+	app code in the kernel (video codecs, packet filters)
+
+what do we want to prevent the untrusted module from doing?
+    corrupting memory that doesn't belong to it
+    read secret data that doesn't belong to it
+    invoke system calls
+    invoke other code that it shouldn't be able to call
+    .. or have exploits like buffer overflow that lead to the above
+
+what should the module be able to do?
+    read/write its own memory
+    execute its own code
+    call certain approved external functions
+
+why XFI?
+    use hardware protection?
+	might be too expensive, or not available (inside kernel)
+    use a high-level language?
+	not practical for legacy code; not practical in kernel w/o runtime
+    use a restricted language?
+	works in some cases: packet filtering language for tcpdump (BPF)
+
+so what's the plan?
+    instrument calls, memory accesses, privileged instructions (eg syscall)
+    make sure that all uses conform to our policy
+
+what's CFI and why do we need it?
+    direct: want to make sure the XFI module doesn't call arbitrary code
+	might not want the module calling system() or making syscalls
+    indirect: need it to make sure we have memory access checks in all places
+    indirect: need it to make sure malicious code doesn't jump past checks
+    problem: x86 disassembly is tricky
+	25 CD 80 00 00    (AND %eax, $0x80cd)
+	jump to second byte (CD 80) to invoke linux syscall
+    cannot verify every possible offset (likely false positives)
+    CFI ensures reliable disassembly and thus reliable software guards
+
+how does CFI work?
+    plan:
+	disassemble the module linearly
+	ensure entry points are on legal instruction boundaries that we saw
+	ensure internal jumps go to legal instruction boundaries that we saw
+
+    construct a call graph ahead of time (program analysis)
+	for each call site, figure out what might be called
+	sometimes hard to tell: calling a function pointer
+	conservative answer: any function whose address is ever computed
+
+    ensure that each call goes to one of the possible call sites
+	simple for static cases
+	need to have a runtime check for computed jumps
+
+    is this good enough?
+	should be able to prevent module from directly calling system
+	    (i.e. will enforce external callers as we wanted)
+	should make disassembly reliable
+	what if the call graph allows arbitrary calls within the module?
+	    might jump around in strange ways internally -- what could happen?
+	    preserves reliable disassembly and external functions called
+	    still need to ensure it doesn't bypass software guards we'll insert
+	    (soln: CFI only allows arcs to function start)
+
+    how do they implement it?
+	assign each arc in the CFG a random ID
+	place this random ID at the start of a function (in a prefetchnta)
+	check the presence at the call site
+
+    figure 2: impl sketch
+	what prevents the attacker from jumping directly to "call EBX"?
+	can an attacker synthesize a valid-looking target?
+	    avoid ID in the check instruction itself
+	    non-executable data
+	    what if attacker can load another module later?
+
+    what about returns?
+	return addresses saved on a special stack
+
+memory protection
+    inline checks: figure 3
+	relies on CFI's nice property
+	not just jumps to instruction boundaries, but jumps to function start
+	prevents jumps to memory reference after the mrguard
+    fastpath vs slowpath memory
+	fastpath: contiguous range of memory for private use by module
+	    can potentially have a different fastpath for each memory ref
+	    if we can guess which range of memory it's likely to be
+	slowpath: other regions that program may have access to
+	    e.g. stack, code (read-only), arguments passed in from the outside
+
+why do they need two stacks?
+    need to protect special values (return addr, frame ptrs) on the stack
+    but memory protection can only protect contiguous regions, not what's in it
+    so place all stack allocations accessed via pointers on one stack
+	protected as a single memory range
+    static analysis protects individual values on the other "scoped" stack
+	XFI keeps track of the use of each element (e.g. return value unchanged)
+    what happens when you grow the stack?
+	ASP: in theory, mrguard should be enough
+	    can we put it in fastpath memory?
+	    probably not since stack is allocated at runtime
+	SSP: mrguard would not allow (not accessible by pointer)
+	    need a separate "stack bottom" check when scoped stack is grown
+
+would XFI prevent exploits of buffer overflows in httpd?
+    simple buffer overflow, clobbering return address
+    corrupting a function pointer on the stack
+	code injection
+	return-to-libc
+	what would the attacker need to do/know to successfully exploit?
+    corrupting a data structure containing the file to read/execute
+
+how does XFI avoid privileged instructions (e.g. page table changing)?
+    verifier statically makes sure there are no such instructions
+
+how does their verifier work?
+    figure 4
+    verification states
+    static checks for immediate memory references or immediate jumps
+    requires a proof for indirect/computed memory accesses or jumps
+    can do one memory check for an entire basic block (ie no branches)
+    verification states keep track of where the return address is on the SSP
+	how does it keep track of where the next return address is?
+    verifier ensures that stack pointers are preserved across function call
+	origASP=ASP, origSSP=SSP[+4] at return instruction
+    can an attacker do a jump to instruction 1 from elsewhere?
+	that would be a static jump, needs no CFI runtime check, in-bounds
+	bypasses mrguard
+    how does the verifier chain together basic blocks?
+	compute all possible transitions between basic blocks (static + CFI)
+	make sure verif. states at parent block imply verif. states at children
+
+what happens on a fault?
+    presumably some existing error mechanism
+    hope the caller knows what to do with errors
+    maybe throw an exception?
+
+what's all the stuff the rewriter has to do?
+    works on unmodified binaries without source code access
+	requires access to some debug information, though
+	needs to figure out how the stack is being used, etc
+    CFI: compute the control flow graph
+	 insert labels and label checks at all jump targets and jump sites
+    memory: move stack allocations that are accessed by pointer to diff stack
+	    generate any needed verification states
+	    insert mrguard calls as necessary to make the verification go thru
+
+how does the XFI module interface with the rest of the world?
+    stubs that set up stacks on incoming calls, copy args or set slowpath perms
+	revoke perms on return
+    stubs that call out (external code doesn't have CFI labels)
+
+what's in the final TCB?
+    verifier is trusted
+    rewriter not trusted
+    rest of the app code is trusted
+	better not be trickable by clever invocations by malicious code!
+	e.g. if there's a sort() function in libc that takes a function ptr
+	almost like the "luring attack" from java
+    stubs going in/out of XFI module are trusted
+	set up stacks, add/remove slowpath permissions to arg memory
+    error handlers are trusted
+
+evaluating security/protection of XFI
+    prevents some buffer overflows, heap overflow
+    even prevents some data overwrites because of separate stacks
+    does not prevent everything (nimda exploited backdoors, "luring" code)
+    had to make some changes for windows drivers (avoid misrepresentation)
+	doesn't seem that bad: just need to provide custom stubs?
+
+what are the tricks to make things perform well?
+    as much static analysis as possible
+	clump multiple mrguard's together using verification states if possible
+    large chunk of fastpath memory
+	need not be fully allocated ahead of time; just virtual memory
+    copy arguments to fastpath memory rather than access the ptrs directly
+    special cases for stack growth
+	SSP: stack bottom kept by windows in a convenient place
+	ASP: use page address bits?
+    slowpath data structure impl
+	very simple: linear array of start+end addrs
+	why does it perform OK?  only a few different ranges
+
+what's the performance of XFI?
+    seems OK
+    main factors: read-protection (expensive!), arg passing (expensive!)
+
+is XFI too strict for some code?
+    JITs that generate x86
+    might not perform well for code accessing many shared data structures
+
+what doesn't XFI prevent?
+    drivers: DMA attacks
+    denial of service, liveness failures
+    exploit unsafe assumptions that callers make (or other called functions)
+	for windows drivers, had to ensure driver "identity" didn't change
+
+where could you use XFI?
+    OKWS?
+    would you use it to confine Java code?
+	might look like a capability design in terms of functions it can invoke
+	hard to pass around complex Java objects across prot. domains
+

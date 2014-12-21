@@ -1,0 +1,74 @@
+
+<!-- saved from url=(0054)http://css.csail.mit.edu/6.858/2009/lec/l11-spins.html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><style type="text/css"></style></head><body dir="ltr" style="max-width:8.5in" class=" hasGoogleVoiceExt">
+
+<h1>Wireless Sensor Networks (notes by Marten van Dijk)</h1>
+
+<b>Read:</b> A. Perrig, R. Szewczyk, J.D. Tygar, V. Wen, and D.E. Culler, "SPINS: Security Protocols for Sensor Networks", Wireless Networks 8, 521-534, 2002.
+
+<p>
+<b>Model (assumptions, security requirements, possible threats):</b>
+
+</p><p>
+What is a sensor network? Thousands to millions of small sensors form self-organizing wireless networks. Sensors have limited processing power, storage, bandwidth, and energy (this gives low production costs). For example, use TinyOS, a small, event-driven OS, see Table 1. Serious security and privacy questions arise if third parties can read or tamper with sensor data.
+
+</p><p>
+Examples: emergency response information, energy management, medical monitoring, logistics and inventory management, battlefield management.
+
+</p><p>
+What are the differences between wireless sensor networks (WSN) and mobile ad hoc networks (MANET)? The number of sensor nodes in a WSN can be several orders of magnitude larger than the nodes in a MANET. Sensor nodes are densely deployed. Sensor nodes are prone to failures. The topology of a WSN changes very frequently. Sensor nodes mainly use a broadcast communication paradigm, whereas most MANETs are based on point-to-point communication. Sensor nodes are limited in processing power, storage, bandwidth, and energy.
+
+</p><p>
+What are the components of a sensor node? Sensing unit with a sensor and analog-to-digital converter (ADC). Processor with storage. Transceiver. Power unit.
+
+</p><p>
+What are the capabilities of a base station? More battery power, sufficient memory, means for communicating with outside networks.
+
+</p><p>
+What are the trust assumptions? Individual sensors are untrusted. There is a known upper bound on the fraction of all sensors that are compromised. Communication infrastructure is untrusted (except that messages are delivered to the destination with non-negligible probability).  Sensor nodes trust their base station. Each node trusts itself.
+
+</p><p>
+What is the protocol stack? Physical layer: simple but robust modulation, transmission, and receiving techniques; responsible for frequency selection, carrier frequency generation, signal detection, modulation. Data link layer: medium access control (MAC) protocol must be power-aware and able to minimize collision with neighbors' broadcasts, MAC protocol in a wireless multi-hop self-organizing network creates the network infrastructure (topology changes due to node mobility and failure, periodic transmission of beacons allows nodes to create a routing topology) and efficiently shares communication resources between sensor nodes (both fixed allocation and random access versions have been proposed), data link layer also implements error control and data encryption + security. Network layer: routing the data supplied by the transport layer, provide internetworking with external networks, design principles are power efficiency, data aggregation useful only when it does not hinder the collaborative effort of the sensor nodes, attribute-based addressing and location awareness. Transport layer: helps to maintain the flow of data if the application requires it, especially needed when the system is planned to be accessed through the Internet or other external networks. Application layer: largely unexplored.
+
+</p><p>
+What are performance metrics? Fault tolerance or reliability: is the ability to sustain sensor network functionalities without interruption due to sensor node failures (non-adversarial such as lack of power, physical damage, environmental interference), it is modeled as a Poisson distribution e^{-lambda*t} to capture the probability of not having a failure within the time interval (0,t). Scalability: ability to support larger networks, flexible against increase in the size of the network even after deployment, ability to utilize more dense networks (density gives the number of nodes within the transmission radius of each node; it equals N*pi*R^2/A, where N is the number of scattered sensor nodes in region A, and R is the radio transmission range). Efficiency: storage complexity (amount of memory required to store certificates, credentials, keys), processing complexity (amount of processor cycles required by security primitives and protocols), communication complexity (overhead in number and size of messages exchanged in order to provide security). Network connectivity: probability that two neighboring sensors are able to share a key (enough key connectivity is required in order to provide intended functionality). Network resilience: resistance against node capture; for each c and s, what is the probability that c compromised sensors can break s links (by reconstructing the corresponding shared secret keys)?
+
+</p><p>
+What are the security requirements? Availability: ensure that service offered by the whole WSN, by any part of it, or by a single node must be available whenever required. Degradation of security services: ability to change security level as resource availability changes. Survivability: ability to provide a minimum level of service in the presence of power loss, failures, or attacks (need to thwart denial of service attacks). 
+
+</p><p>
+Authentication: authenticate other nodes, cluster heads, and base stations before granting a limited resource, or revealing information. Integrity: ensure that the message or entity under consideration is not altered (data integrity is achieved by data authentication). Freshness: ensure that each message is fresh, most recent (detect replay attacks). 
+
+</p><p>
+Confidentiality: providing privacy of the wireless communication channels (prevent information leakage by eavesdropping or covert channels), need semantic security, which ensures that an eavesdropper has no information about the plaintext, even if it sees multiple encryptions of the same plaintext (e.g., concatenate plaintext with a random bit string, this however requires sending more data and costs more energy). Non-repudiation: preventing malicious nodes from hiding their activities (e.g., they cannot refute the validity of a statement they signed). 
+
+</p><p>
+<b>Solutions (SNEP, micro TESLA, Key Distribution):</b>
+
+</p><p>
+What are the limitations in designing security? Security needs to limit the consumption of processing power. Limited power supply limits the lifetime of keys. Working memory cannot hold the variables for asymmetric cryptographic algorithms such as RSA. High overhead to create and verify signatures. Need to limit communication.
+
+</p><p>
+SNEP: A and B share a master key, which they use to derive an encryption keys K_AB and K_BA, and MAC keys K'_AB and K'_BA. A and B synchronize counter values C_A=C_B. Communication from A to B: {Data}_[K_AB,C_A] = Data XOR E_{K_AB}(C_A) together with MAC_{K'_AB}({Data}_[K_AB,C_A]||C_A), see Formula (1). The MAC computation is pictured in Figure 3 using CBC mode. This gives semantic security, data authentication, weak freshness (if the message verifies correctly, a receiver knows that the message must have been sent after the previous message it (the receiver) received correctly), low communication overhead (the counter value is not sent).
+
+</p><p>
+Strong freshness: see Formula (2), if B request a message from A, then B transmits to A a nonce and A includes this nonce in the MAC of its communication to B. If the MAC verifies correctly, B knows that A generated the response after B sent the request.
+
+</p><p>
+Synchronize counter values: see Section 5.2 for a simple bootstrapping protocol, at any time the above protocol with strong freshness can be used to request the current counter value. To prevent denial of service attacks, allow transmitting the counter with each encrypted message in the above protocols, or attach another short MAC to the message that does not depend on the counter.
+
+</p><p>
+micro TESLA: authenticated broadcast requires an asymmetric mechanism, otherwise any compromised receiver could forge messages from the sender. How can this be done without asymmetric crypto? Introduce asymmetry through delayed disclosure of symmetric keys. Idea: base station uses MAC_K with a key unknown to sensor nodes, K is a key of a key chain (K_i = F(K_{i+1}), where F is a one-way function) through which it is committed to the base station (in a key chain, keys are self-authenticating), the key chain is revealed through delayed disclosure by the base station. The key disclosure time delay is on the order of a few time intervals and greater than any reasonable round trip time. Receiver node knows the key disclosure time. Each receiver node needs to have one authentic key of the one-way key chain as a commitment to the entire chain. Sender base station and receiver nodes are loosely time synchronized. Simple bootstrapping protocol using shared secret MAC keys, see Section 5.5.
+
+</p><p>
+Nodes cannot store the keys of a key chain: node may broadcast data through the base station, or uses the base station to outsource key chain management.
+
+</p><p>
+Key setup: master key shared by the base station and node. How do we do key distribution? There has been a lot of research providing solutions that have good resilience, connectivity, and scalability. Controversial solution: Key infection; bootstrapping does not need to be secure, it is about security maintenance in a stationary network. Idea: transmit symmetric keys in the clear and use secrecy amplification (and other mechanisms). In secrecy amplification two nodes A and B use a third neighboring node C to set up communication between A and B. This communication channel is protected by keys K_{A,C} and K_{C,B}. It is used to exchange a nonce N. A and B replace their key K_{A,B} by H(K_{A,B}||N) and verify whether they can use this new key. If K_{A,B} is know to an adversary, but keys K_{A,C} and K_{C,B} are not, then the adversary cannot extract the new K_{A,B}! This solution has been proposed for the battlefield management application.
+
+</p><p>
+Related topics: RFID tags, social networks, TinyDB.
+
+
+
+</p></body></html>

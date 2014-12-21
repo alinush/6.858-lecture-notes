@@ -1,0 +1,189 @@
+Electronic voting
+=================
+
+final projects reminder
+    10-minute presentations about your projects on Wednesday
+	we will have a projector that you can use
+    code and write-up describing your project due on Friday
+    will only start grading on monday morning, if you need extension..
+
+quiz solutions posted on course web site
+HKN course eval link posted on course web site
+
+---
+
+what are the security goals in elections?
+    availability: voters can vote
+    integrity: votes cannot be changed; results reflect all votes
+    registration: voters should vote at most once
+    privacy: voters should not be able to prove how they voted (eg to sell vote)
+
+what's the threat model?
+    lots of potential attackers
+	officials, vendors, candidates themselves, activists, governments, ..
+	    may be interested in obtaining a particular outcome
+	voters may want to sell votes
+    real world: anything is fair game
+	intimidation
+	impersonation (incl. dead people)
+	denial of service
+	ballot box stuffing, miscounting, ..
+    electronic voting machine attacks
+	buffer overflows
+	logic bugs
+	insider attacks
+	physical attacks
+	crashing / corrupting
+	..
+    ideal designs focus on making the attack cost high
+	auditing with penalties if detected
+
+what are the alternatives?
+    vote in public: raise hands, ..
+    written paper ballots
+    optical-scan paper ballots
+    punched paper ballots
+    DRE (what this paper is about): direct-recording electronic machine
+    absentee voting by mail
+	vote-selling potential
+    internet voting
+	greater voter turnout
+	vote-selling potential
+	more practical problem: worms/viruses voting?
+
+why DRE?
+    partly a response to voting problems in florida in the 2000 election
+    hoped: easier-to-use UI, faster results, more accurate counting, ..
+    interesting set of constraints from a research point of view
+	high integrity, ideally verifiable
+	most of the process should be transparent and auditable
+	cannot expose individual voter's choices
+	cannot allow individual voters to prove their vote
+
+how does the machine work?
+    133MHz CPU
+    32MB RAM
+
+    on-board flash memory
+    EPROM socket
+    "ext flash" socket
+    boot selector switches, determine which of above 3 device is used to boot
+
+    internal speaker
+
+    external devices:
+	touch-sensitive LCD panel, keypad, headphones
+	printer -- why?
+	smart card reader/writer -- why?
+	irda transmitter/receiver -- why?
+
+	power switch, keyboard port, PC-card slots (behind locked metal door)
+
+what does the boot sequence look like?
+    bootloader runs from selected source
+    internal flash contains a gzip'ed OS image that gets loaded into RAM
+	includes image for root file system
+    internal flash contains file system that stores votes, among other things
+
+what's on the memory card?
+    machine state configured via election.brs file
+    votes stored on memory card (and in the built-in flash) in election.brs
+    data encrypted using a fixed DES key (hard-coded in the software)
+
+machine states: pre-download, pre-election testing, election, post-election
+    what's the point of L&A testing?
+	want to distinguish test votes from real votes
+	want to make it difficult to erase existing votes
+	also tips off the software that it's being tested!
+
+why smartcards?
+    contain a secure token from sign-in desk to the voting machine
+    ideal property: cannot fake a token, cannot duplicate token
+    how to implement?  faking is easy, duplication is harder
+	can give each token a unique ID, store used tokens on machine
+	potentially vulnerable to multiple votes on different machines
+	can have smartcard destroy the token after use, no read/write API
+    in practice, turned out the machine was not using any smartcard crypto
+    attacker can easily manufacture fake smartcards and vote many times
+    (attacker can also manufacture an "admin" smartcard and manage the machine)
+
+what's the point of printing out receipt tapes post-election?
+    in theory can do a recount based on these tapes; compare with check-in data
+    assumes the attack is mounted after the election happens
+	corrupt or lost memory cards, compromised tabulation, ..
+
+what attacks did the authors explore?
+    exploiting physical access to inject malicious code
+    vote stealing
+    denial of service
+    viruses/worms
+
+specific bugs
+    unauthenticated smartcards
+    unauthenticated firmware updates (fboot.nb0)
+    unauthenticated OS updates (nk.bin)
+    unauthenticated debug mode flag (explorer.glb)
+    unauthenticated wipe command (EraseFFX.bsq)
+    unauthenticated code injection (.ins files with buffer overflows)
+    poor physical security (cheap lock)
+    easy to change boot source
+    easy to change components like EPROM
+    insufficient audit logs (no integrity; election.adt just has "Ballot cast")
+    sound when machine reboots, but can be prevented with headphones
+
+what to do when an audit shows an error?
+    with this machine: denial of service attack, effectively
+    ideally would be able to reconstruct what happened or recount manually?
+
+how to scrub a machine after a potential compromise?
+    can't trust anything: all memory/code easily changed by attacker
+    need to install a known-good EPROM, use that to overwrite bootloader, OS
+    can take a long time, esp. if problem spread to many machines
+
+how to prevent these attacks?
+    TPM / secure boot?
+    would signed files be enough?
+	attacker can get a hold of signed "debug mode" file and he's done?
+	signed software updates might not be the latest version
+	    attacker installs old version, exploits bug
+	    might want to prevent rollbacks (but may want to allow, too?)
+    read-only memory for software?
+	physical switches to allow updates
+	could make it more difficult to write a fast-spreading virus/worm
+    physical access control
+	probably a good idea, to some extent
+	auditing physical access leads to easy DoS attacks
+	need a strong audit mechanism to prevent DoS (i.e., can recount)
+    append-only memory for auditing?
+	disable the "flash" (rewrite) circuitry from flash memory?
+	or just have a dedicated "audit" controller
+	system already has a separate battery-management PIC
+    OS-level protection?
+    language security?
+    operating / setup procedures?
+	who has access to the machine, chain of custody, ...
+    parallel testing?
+
+what is software-independence?
+    malicious software alone cannot change election results (undetectably)
+    e.g. software helps print out ballot, voter makes sure ballot is OK
+    or prints out a paper tape with all votes, which is counted by hand
+
+usability for voters?
+    paper doesn't describe the UI, unfortunately..
+    "machine ate my vote"?
+    could invalidate smartcard and crash?
+
+usability for officials?
+    potentially same problems as PGP
+    do officials have the right mental model to worry about potential attacks?
+
+end-to-end integrity
+    voting integrity has 3 parts:
+	cast-as-intended
+	collected-as-cast
+	counted-as-collected
+    above techniques only help ensure cast-as-intended
+    need more end-to-end security to ensure other 2 properties
+    Twin scheme by Rivest and Smith
+

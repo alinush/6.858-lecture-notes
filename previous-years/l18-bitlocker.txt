@@ -1,0 +1,261 @@
+BitLocker
+=========
+
+Administrivia.
+  Project status update due this Friday.
+  Quiz review next Monday.
+
+Interesting paper: real-world engineering trade-offs for a security system.
+  Authors fully acknowledge their system is not perfect.
+  Nonetheless, design makes sense for target threat model.
+  Real system: used in Windows Visa, Windows 7, Windows 8.
+
+What's the problem this paper is trying to solve?
+  Prevent data from being stolen if an attacker physically steals a laptop.
+  How would an attacker get data from stolen laptop?
+    Easy: take out the disk; boot from CD and change passwords; etc.
+  Effectively, want some form of disk encryption.
+
+What security properties might users want from disk encryption?
+  Data secrecy: adversary that gets access to disk cannot get data.
+  Data integrity: adversary cannot replace data on disk without detection.
+  Data freshness: adversary cannot roll back to an old version without det.
+  Deniability:
+    Ensure that adversary can't tell you have certain data encrypted.
+    Ensure that adversary can't tell if they have the real password.
+    E.g., someone forces you to give up your password.
+    [ Related case: https://www.eff.org/cases/us-v-fricosu ]
+
+Where do encryption keys come from?
+  Simple approach: user provides key in some form.
+    User might enter password (hashed to produce key, like in Kerberos).
+      Problem: user needs to enter password early in the boot process (BIOS).
+      Problem: passwords are weak, adversary can try to guess the right one.
+    User might plug in a USB drive containing the key.
+      Problem: users don't want to carry around extra USB keys.
+      Problem: users might lose the USB key along with the laptop.
+
+Bitlocker: give key to legitimate OS, let OS verify user's credentials.
+  How to tell if legit OS is running, or attacker boots from his own CD?
+  One approach: only run software signed by some authority (signed boot).
+    E.g., a PC only runs Windows signed by Microsoft.
+    Even if adversary boots from CD, can only boot Windows.
+    Windows will still enforce file permissions, password checks, etc.
+    Sometimes works on specialized devices (game consoles, cell phones, ..)
+    Too restrictive for general-purpose PCs.
+  Another approach: measured boot.
+    Instead of restricting what software can boot, authenticate ("measure") it.
+    Use a piece of trusted hardware: a TPM (Trusted Platform Module).
+
+               DRAM       /-- BIOS
+                 |        |
+    CPU --- Northbridge --+-- TPM
+
+  TPM chip has an ephemeral set of registers (PCR0, PCR1, ..), and a key.
+  Some supported operations (others also exist, but irrelevant here):
+    TPM_extend(m): extend a PCR register, PCRn = SHA1(PCRn || m)
+    TPM_quote(n, m): generate signature of (PCRn, m) with TPM's key
+    TPM_seal(n, PCR_value, plaintext): return ciphertext.
+    TPM_unseal(ciphertext): return plaintext, if PCRn matches PCR_value.
+
+Who does the authentication/measurement for measured boot?
+  PCR values get reset to zero only when the entire computer is reset.
+  Important: CPU must jump to BIOS code, which is not tampered with.
+  BIOS code "measures" itself: extends PCR with hash of its code.
+  BIOS code loads boot loader (e.g., Linux grub), measures it
+    (extends PCR with the hash of the boot loader), runs it.
+  Boot loader loads kernel, measures it (extends PCR with hash of
+    kernel), runs it.
+
+What can we infer if some PCRn corresponds to a particular chain of hashes?
+  Could be that the right software chain was loaded.
+  Or some software along the way had a bug, was exploited, and adversary
+    issued their own extends from that point forward in the chain.
+  Or the CPU did not start with the BIOS code in the first place.
+  Or the TPM hardware did not reset synchronously with the CPU.
+    [ Turned out to be "easy" on some motherboards: just short out a pin. ]
+
+What does this allow us to do?
+  Can prove to others over the network that you're running some software.
+    Use TPM_quote() to get the TPM to sign a message on your behalf.
+    Assumption: remote party trusts your TPM (but not you directly).
+    TPM has its own secret key, HW mfg signs public key, stores cert on TPM.
+  Can encrypt data in a way that's only accessible to specific software.
+    Use TPM_seal, TPM_unseal.
+    Sealed data can be decrypted only by chosen recipient (PCR).
+    Each TPM has its own randomly-generated key for encryption.
+  Assumption: adversary does not tamper with CPU, TPM, or their link.
+
+Bitlocker's TPM mode: key stored in TPM.
+  Idea: store key in the TPM (or rather, seal it using the TPM).
+    Advantage: no need for user to interact with the BIOS.
+  What's the point of TPM-only mode?
+    Key can only be obtained if the machine boots up the same OS (Windows).
+    As a result, security boils down to whatever plan Windows has.
+    One possibility: user has Windows password.
+      Why is this better than the password-in-BIOS approach?
+      1. No need to enter password twice: in BIOS and in Windows.
+      2. Windows can rate-limit login attempts, prevent pw guessing.
+    Another possibility: user cannot access sensitive data directly.
+      User might have to access sensitive data via privileged process.
+      Privileged process will not divulge entire data set.
+
+What gets measured at boot in BitLocker?
+  Two partitions on disk.
+  First partition contains BitLocker's bootstrapping code.
+  Second partition contains encrypted data ("OS volume").
+  First partition measured at boot.
+  BitLocker's key sealed with first partition's PCR measurement.
+  Why not measure the second partition?
+    Changes frequently.
+    Expectation: adversary won't be able to meaningfully change it.
+  What if we need to upgrade the first partition?
+    One possibility: re-seal key with new PCR value before upgrade.
+  What if we need to upgrade laptops?  Or, laptop died and need to recover?
+    Disk encryption key is stored encrypted with a recovery password.
+    (Or, stored in Active Directory encrypted with admin's password.)
+    User can type in their recovery password to gain access to disk.
+
+How do we encrypt the disk once we have the key?
+  Encrypt disk blocks (sectors) one-at-a-time.
+    Why one-at-a-time?  Atomicity, performance.
+  Potential problem: integrity (adversary can modify sectors on disk).
+    Why is this a problem for a disk encryption scheme?
+    Why is it insufficient to do secure boot (check signatures on code)?
+  What are the options for ensuring integrity?
+    Ideally, store a MAC (~keyed hash) for the sector somewhere on disk.
+    Recall, disks write sectors at a time: need one MAC per sector.
+    Store MAC in adjacent sector: effectively cut space by a factor of 2.
+    Store MAC in a table elsewhere: two seeks (and breaks atomicity).
+    Store MACs for group of sectors nearby: breaks atomicity.
+  Where can we store MACs for integrity?
+    Buy really expensive disks (NetApp, EMC) that have jumbo sectors.
+    "Enterprise" disks have 520-byte sectors, instead of standard 512.
+    Extra 8 bytes used to store checksums, transaction IDs, etc.
+    Could be used to store MAC.
+    Not going to fly for common machines.
+  BitLocker approach: "poor-man's authentication"
+    Assume adversary cannot change the ciphertext in a "useful" fashion.
+    I.e., cannot have a predictable effect on the plaintext.
+  When would this work or not?
+    Works if applications detect or crash when important data is garbled.
+    Must be true at sector-level, which attacker can corrupt separately.
+    Probably true for code: random instructions will raise an exception.
+    Worst case for data: 1 bit (e.g., "require login?") alone in a sector.
+    Adversary can guess random ciphertexts, see when that bit changes.
+    If application doesn't notice other bits corrupted, game over.
+    Hopefully this is not how the registry is constructed, so maybe OK..
+  What about freshness?
+    Harder to achieve: need to have some state that can't be rolled back.
+    Strawman: hash all blocks, store hash in TPM.
+    Problem: updates require re-hashing entire disk, slow.
+    Idea: tree of hashes (Merkle tree).
+    Even that is often too expensive to update.
+  How do we achieve poor-man's authentication?
+    Let's look at some encryption mechanisms.
+    We consider symmetric-key encryption schemes (no need for public-key).
+    Key sizes are typically on the order of 128 bits for symmetric-key.
+
+Stream ciphers.
+  Generate a stream of pseudo-random bits, XOR data with stream.
+  XOR'ing with same stream twice produces original data.
+  Example: RC4.
+  Not a good fit for disk encryption: cannot reuse stream; highly malleable.
+
+Block ciphers.
+  Encrypt entire block of data at a time; hopefully no direct bitwise deps.
+  Standard block cipher today: AES, 128-bit block size (128- or 256-bit key).
+  How to encrypt something larger than a block size?
+
+Block cipher modes of operation
+  Have plaintext blocks P_1 .. P_n
+  Want ciphertext blocks C_1 .. C_n
+  ECB: Apply block cipher to each block-sized chunk in turn.
+    C_i = E_k(P_i)
+    Advantage: simple.
+    Disadvantage: attacker can permute blocks, find equal blocks, ..
+  CBC: XOR each block's plaintext with previous block's ciphertext.
+    C_i = E_k(P_i XOR C_{i-1})
+    Can we decrypt this?  P_i = D_k(C_i) XOR C_{i-1}
+    Advantage: attacker cannot permute blocks.
+               different ciphertexts for matching plaintext blocks.
+    Disadvantage: encryption hard to parallelize (but decryption can be).
+    What if plaintext is changed by 1 bit?  All subsequent C's affected.
+    What if ciphertext changed by 1 bit?  Only 2 plaintexts affected.
+      Plaintext for changed ciphertext is fully garbled.
+      Plaintext for next block is changed by 1 bit, in the same position!
+    What's P_0 here, the initial XOR value?
+      Called the initiatlization vector (IV).
+      Needed for decryption, to decrypt the first block.
+    What if IV is revealed after encryption?  Usually OK.
+    What if IV is predictable or reused?  Usually a bad idea.
+      Leaks information about the contents of first block.
+      Watermarking attacks on file system.
+        Adversary can create file patterns that are visible after enc.
+    How to choose IVs for disk encryption?
+      Typically want to choose different IVs for different sectors.
+        Different encryptions for different sectors.
+      Avoids watermarking, swapping of sectors by adversary.
+      However, IV is typically reused, so ideally keep IV secret.
+  CMC: roughly, do CBC forward, XOR with something, then do CBC backward.
+    Good diffusion properties: CBC provides one-way diffisuion, CMC is both.
+    In fact, CMC is provably secure: a sector-sized block cipher.
+  Many more block cipher modes of operation exist.
+    Can provide provable CCA2 security (UFE), authentication (OCB/CCM), ..
+
+BitLocker's AES-CBC + Elephant mode
+  What's the goal?
+    Better "diffision" properties for sector-level encryption.
+    Changing any part of ciphertext should affect entire sector.
+    Not the case with AES-CBC on its own: only forward diffusion.
+    Some modes of operation provide better diffusion (e.g., CMC).
+      But CMC is slow: requires encrypting twice.
+    Important goal: high performance!
+      At the time, AES-CBC was 20-25 cycles per byte: ~120MB/sec.
+      Now it's 3-4 cycles per byte: ~600-700MB/sec, per core.
+      Originally, CMC would have been too slow: only ~60MB/sec?
+      Perhaps now CMC (or similar) would be a reasonable choice.
+    Alternate plan: shuffle bits before AES-CBC to improve diffusion.
+  Figure 1 in the paper.
+  Start with basic AES-CBC: closest to what we want.
+  Why is the IV derived from the sector number?
+    Make encryption functions of each sector different, prevent switching.
+  Why is the sector number encrypted in the IV?
+    Make sure the IV is not predictable, avoid watermarking attacks.
+    Different users will have different IVs for the same sector number.
+  What are the diffusers doing?
+    XORing bits of the block.
+    Ensures that one bit change on either side will flip many other bits.
+  Why do we have another sector-dependent transform upfront (sector key)?
+    So that diffusers don't operate on predictable data on either side.
+    Even if adversary learns the IV for a pair of sectors, cannot swap them.
+  Sector key: why is it different from the AES key?
+    Guarantees that sector-key operations cannot weaken AES.
+    Even if the entire secret key is leaked, AES-CBC still intact.
+    Good way to think of extending crypto schemes: never reuse keys!
+
+Potential attacks on BitLocker?
+  Not intended to be a perfect security solution, by design.
+  Hardware attacks: DMA, cold boot attacks, ..
+  Security vulnerabilities in Windows (buffer overflows, root access).
+  Rolling back disk blocks to an old version (i.e., violate freshness).
+    Adversary likely doesn't have interesting old blocks.
+    Hard (expensive in terms of performance) to defend against.
+
+No vulnerabilities found in design so far (8 yrs), modulo threat model.
+  Attacks mostly focus on extracting key from Windows kernel's memory.
+  Hardware attacks: DMA via devices like Firewire.
+  Software attacks: install a kernel module as administrator; get memory dump.
+    Requires first bypassing access control in Windows in some way.
+  Goal was to increase cost of attack, and BitLocker appears to succeed at it.
+
+Alternative to BitLocker's sector encryption: filesystem-level encryption.
+  E.g., ecryptfs in Linux, used by Ubuntu's home directory encryption.
+  FS can solve atomicity/consistency problems.
+  FS can find space for extra MACs, random IVs to prevent IV reuse, etc.
+  FS might require much more code to be "measured" into the TPM.
+    FS comes up much later in the boot process.
+    Requires TPM re-sealing for FS upgrades, driver upgrades, etc.
+  FS might not interpose on swapping/paging.
+  FS harder to deploy (changes to FS, cannot deploy incrementally).
+

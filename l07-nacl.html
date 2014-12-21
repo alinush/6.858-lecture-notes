@@ -1,0 +1,489 @@
+<h1>Native Client</h1>
+
+<h3>What's the goal of this paper?</h3>
+
+<ul>
+<li>At the time, browsers allowed any web page to run only JS (+Flash) code.</li>
+<li>Want to allow web apps to run native (e.g., x86) code on user's machine.
+<ul>
+<li>Don't want to run complex code on server.</li>
+<li>Requires lots of server resources, incurs high latency for users.</li>
+</ul></li>
+<li>Why is this useful?
+<ul>
+<li>Performance.</li>
+<li>Languages other than JS.</li>
+<li>Legacy apps.</li>
+</ul></li>
+<li>Actually being used in the real world.
+<ul>
+<li>Ships as part of Google Chrome: the NaCl runtime is a browser extension.</li>
+<li>Web page can run a NaCl program much like a Flash program.</li>
+<li>Javascript can interact with the NaCl program by passing messages.</li>
+<li>NaCl also provides strong sandboxing for some other use cases.</li>
+</ul></li>
+<li>Core problem: sandboxing x86 code.</li>
+</ul>
+
+<h3>Using Native Client:</h3>
+
+<ul>
+<li><p>https://developers.google.com/native-client/</p>
+
+<ul>
+<li>Install browser plug in</li>
+<li>Use Nacl tool change to compile C or C++ program</li>
+<li>There are restrictions on what system calls you can use</li>
+<li>Example app: games (don't need much systems support)</li>
+<li>Special interface to talk to browser (in release called Pepper)</li>
+<li>Make a web page that includes Nacl module:</li>
+</ul>
+
+<p><code>
+&lt;embed name="nacl_module"
+       id="hello_world"
+       width=0 height=0
+       src="hello_world.nmf"
+       type="application/x-nacl" /&gt;
+</code></p>
+
+<ul>
+<li>Module is "controled" x86 code.</li>
+</ul></li>
+</ul>
+
+<h3>Quick demo:</h3>
+
+<pre><code>% urxvt -fn xft:Monospace-20
+% export NACL_SDK_ROOT=/home/nickolai/tmp/nacl_sdk/pepper_35
+% cd ~/6.858/git/fall14/web/lec/nacl-demo
+## this is from NaCl's tutorial part1
+% vi hello.cc
+% vi index.html
+% make
+% make serve
+## copy-paste and add --no-dir-check as the error message asks
+## visit http://localhost:5103/
+## change hello.cc to "memset(buf, 'A', 1024);"
+% make
+% !python
+## visit http://localhost:5103/
+## ctrl-shift-J, view console
+</code></pre>
+
+<h2>What are some options for safely running x86 code?</h2>
+
+<p><strong>Approach 0:</strong> trust the code developer.</p>
+
+<ul>
+<li>ActiveX, browser plug-ins, Java, etc.</li>
+<li>Developer signs code with private key.</li>
+<li>Asks user to decide whether to trust code from some developer.</li>
+<li>Users are bad at making such decisions (e.g., with ActiveX code).
+<ul>
+<li>Works for known developers (e.g., Windows Update code, signed by MS).</li>
+<li>Unclear how to answer for unknown web applications (other than "no").</li>
+</ul></li>
+<li>Native Client's goal is to enforce safety, avoid asking the user.</li>
+</ul>
+
+<p><strong>Approach 1:</strong> hardware protection / OS sandboxing.</p>
+
+<ul>
+<li>Similar plan to some ideas we've already read: OKWS, Capsicum, VMs, ..</li>
+<li>Run untrusted code as a regular user-space program or a separate VM.</li>
+<li>Need to control what system calls the untrusted code can invoke.
+<ul>
+<li>Linux: seccomp.</li>
+<li>FreeBSD: Capsicum.</li>
+<li>MacOSX: Seatbelt.</li>
+<li>Windows: unclear what options exist.</li>
+</ul></li>
+<li>Native client uses these techniques, but only as a backup plan.</li>
+<li>Why not rely on OS sandboxing directly?
+<ul>
+<li>Each OS may impose different, sometimes incompatible requirements.
+<ul>
+<li>System calls to allocate memory, create threads, etc.</li>
+<li>Virtual memory layout (fixed-address shared libraries in Windows?).</li>
+</ul></li>
+<li>OS kernel vulnerabilities are reasonably common.
+<ul>
+<li>Allows untrusted code to escape sandbox.</li>
+</ul></li>
+<li>Not every OS might have a sufficient sandboxing mechanism.
+<ul>
+<li>E.g., unclear what to do on Windows, without a special kernel module.</li>
+<li>Some sandboxing mechanisms require root: don't want to run Chrome as root.</li>
+</ul></li>
+<li>Hardware might have vulnerabilities (!).
+<ul>
+<li>Authors claim some instructions happen to hang the hardware.</li>
+<li>Would be unfortunate if visiting a web site could hang your computer.</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p><strong>Approach 2:</strong> software fault isolation (Native Client's primary sandboxing plan).</p>
+
+<ul>
+<li>Given an x86 binary to run in Native Client, verify that it's safe.
+<ul>
+<li>Verification involves checking each instruction in the binary.</li>
+<li>Some instructions might be always safe: allow.</li>
+<li>Some instructions might be sometimes safe.
+<ul>
+<li>Software fault isolation's approach is to require a check before these.</li>
+<li>Must ensure the check is present at verification time.</li>
+<li>Another option: insert the check through binary rewriting.</li>
+<li>Hard to do with x86, but might be more doable with higher-level lang.</li>
+</ul></li>
+<li>Some instructions might be not worth making safe: prohibit.</li>
+</ul></li>
+<li>After verifying, can safely run it in same process as other trusted code.</li>
+<li>Allow the sandbox to call into trusted "service runtime" code.
+<ul>
+<li>Figure 2 from paper</li>
+</ul></li>
+</ul>
+
+<h2>What does safety mean for a Native Client module?</h2>
+
+<ul>
+<li><strong>Goal #1:</strong> does not execute any disallowed instructions (e.g., syscall, int).
+<ul>
+<li>Ensures module does not perform any system calls.</li>
+</ul></li>
+<li><strong>Goal #2:</strong> does not access memory or execute code outside of module boundary.
+<ul>
+<li>Ensures module does not corrupt service runtime data structures.</li>
+<li>Ensures module does not jump into service runtime code, ala return-to-libc.</li>
+<li>As described in paper, module code+data live within [0..256MB) virt addrs.
+<ul>
+<li>Need not populate entire 256MB of virtual address space.</li>
+</ul></li>
+<li>Everything else should be protected from access by the NaCl module.</li>
+</ul></li>
+</ul>
+
+<h2>How to check if the module can execute a disallowed instruction?</h2>
+
+<ul>
+<li>Strawman: scan the executable, look for "int" or "syscall" opcodes.
+<ul>
+<li>If check passes, can start running code.</li>
+<li>Of course, need to also mark all code as read-only.</li>
+<li>And all writable memory as non-executable.</li>
+</ul></li>
+<li><em>Complication:</em> x86 has variable-length instructions.
+<ul>
+<li>"int" and "syscall" instructions are 2 bytes long.</li>
+<li>Other instructions could be anywhere from 1 to 15 bytes.</li>
+</ul></li>
+<li>Suppose program's code contains the following bytes:
+<ul>
+<li><code>25 CD 80 00 00</code></li>
+</ul></li>
+<li>If interpreted as an instruction starting from 25, it is a 5-byte instr:
+<ul>
+<li><code>AND %eax, $0x000080cd</code></li>
+</ul></li>
+<li>But if interpreted starting from CD, it's a 2-byte instr:
+<ul>
+<li><code>INT $0x80   # Linux syscall</code></li>
+</ul></li>
+<li>Could try looking for disallowed instructions at every offset..
+<ul>
+<li>Likely will generate too many false alarms.</li>
+<li>Real instructions may accidentally have some "disallowed" bytes.</li>
+</ul></li>
+</ul>
+
+<h2>Reliable disassembly</h2>
+
+<ul>
+<li><strong>Plan:</strong> ensure code executes only instructions that verifier knows about.
+<ul>
+<li>How can we guarantee this? Table 1 and Figure 3 in paper.</li>
+</ul></li>
+<li>Scan forward through all instructions, starting at the beginning.</li>
+<li>If we see a jump instruction, make sure it's jumping to address we saw.</li>
+<li>Easy to ensure for static jumps (constant addr).</li>
+<li>Cannot ensure statically for <strong>computed jumps</strong> (jump to addr from register).</li>
+</ul>
+
+<h3>Computed jumps</h3>
+
+<ul>
+<li>Idea is to rely on runtime instrumentation: added checks before the jump.</li>
+<li>For computed jump to %eax, NaCl requires the following code: <br />
+<code>
+AND $0xffffffe0, %eax       # Clear last 4 bits (=&gt; only jump to 32-byte boundary) <br />
+JMP *%eax
+</code></li>
+<li>This will ensure jumps go to multiples of 32 bytes. Why 32-byte?
+<ul>
+<li>longer than the max. instruction length</li>
+<li>power of 2</li>
+<li>need to fit trampoline (see below later) code</li>
+<li>not bigger because we don't want to waste space for single instruction 
+jump targets</li>
+</ul></li>
+<li>NaCl also requires that no instructions span a 32-byte boundary.</li>
+<li>Compiler's job is to ensure both of these rules.
+<ul>
+<li>Replace every computed jump with the two-instruction sequence above.</li>
+<li>Add NOP instructions if some other instruction might span 32-byte boundary.</li>
+<li>Add NOPs to pad to 32-byte multiple if next instr is a computed jump target.</li>
+<li>Always possible because NOP instruction is just one byte.</li>
+</ul></li>
+<li>Verifier's job is to check these rules.
+<ul>
+<li>During disassembly, make sure no instruction spans a 32-byte boundary.</li>
+<li>For computed jumps, ensure it's in a two-instruction sequence as above.</li>
+</ul></li>
+<li>What will this guarantee?
+<ul>
+<li>Verifier checked all instructions starting at 32-byte-multiple addresses.</li>
+<li>Computed jumps can only go to 32-byte-multiple addresses.</li>
+</ul></li>
+<li>What prevents the module from jumping past the AND, directly to the JMP?
+<ul>
+<li>Pseudo-instruction: the NaCl jump instruction will never be compiled so
+that the <code>AND</code> part and the <code>JMP</code> part are <em>split</em> by a 32-byte boundary.
+Thus, you could never jump straight to the <code>JMP</code> part.</li>
+</ul></li>
+<li>How does NaCl deal with <code>RET</code> instructions?
+<ul>
+<li>Prohibited -- effectively a computed jump, with address stored on stack.
+<ul>
+<li>This is due to an <strong>inherent race condition</strong>: the <code>ret</code> instruction pops
+the return address off the stack and then jumps to it. NaCl could check the
+address on the stack before its popped, but there's TOCTOU problem here:
+the address could be modified immediately after the check by another thread.
+This can happen because the return address is in memory, not in a register.</li>
+</ul></li>
+<li>Instead, compiler must generate explicit POP + computed jump code.</li>
+</ul></li>
+</ul>
+
+<h3>Why are the rules from Table 1 in the paper necessary?</h3>
+
+<ul>
+<li>C1: executable code in memory is not writable.</li>
+<li>C2: binary is statically linked at zero, code starts at 64K.</li>
+<li>C3: all computed jumps use the two-instruction sequence above.</li>
+<li>C4: binary is padded to a page boundary with one or more HLT instruction.</li>
+<li>C5: no instructions, or our special two-instruction pair, can span 32 bytes.</li>
+<li>C6/C7: all jump targets reachable by fall-through disassembly from start.</li>
+</ul>
+
+<p><strong>Homework question:</strong> what happens if verifier gets some instruction length wrong?</p>
+
+<p><strong>Answer:</strong> Depending on where you offset into a seamingly innocent x86 instruction
+stream, you can get unexpectedly useful instructions out (In the BROP paper, we got
+a "pop rsi; ret;" from offsetting at 0x7 into the BROP gadget).</p>
+
+<p>If the checker incorrectly computes the length of an x86 instruction, then the
+attacker can exploit this. Suppose the checker computes <code>bad_len(i)</code> as the
+length of a certain instruction <code>i</code> at address <code>a</code>. The attacker, knowledgeable
+about x86, could write assembly code at address <code>a + bad_len(i)</code> that passes all
+the checks and seems harmless. This assembly code is what the NaCl checker
+would "see", given the instruction length bug. However, when the code is
+executed, the next instruction after instruction <code>i</code> would be at address 
+<code>a + real_len(i)</code>. And, the attacker carefully crafted his code such that the 
+instructions at and after <code>a + real_len(i)</code> do something useful. Like jumping
+outside the sandbox, or a syscall.</p>
+
+<h2>How to prevent NaCl module from jumping to 32-byte multiple outside its code?</h2>
+
+<ul>
+<li>Could use additional checks in the computed-jump sequence. <br />
+<code>
+AND $0x0fffffe0, %eax <br />
+JMP *%eax
+</code></li>
+<li>Why don't they use this approach?
+<ul>
+<li>Longer instruction sequence for computed jumps.</li>
+<li>Their sequence is <code>3+2=5</code> bytes, above sequence is <code>5+2=7</code> bytes.</li>
+<li>An alternative solution is pretty easy: segmentation.</li>
+</ul></li>
+</ul>
+
+<h3>Segmentation</h3>
+
+<ul>
+<li>x86 hardware provides "segments".</li>
+<li>Each memory access is with respect to some "segment".
+<ul>
+<li>Segment specifies base + size.</li>
+</ul></li>
+<li>Segments are specified by a segment selector: ptr into a segment table.
+<ul>
+<li><code>%cs, %ds, %ss, %es, %fs, %gs</code></li>
+<li>Each instruction can specify what segment to use for accessing memory.</li>
+<li>Code always fetched using the <code>%cs</code> segment.</li>
+</ul></li>
+<li>Address translation: (segment selector, addr) -> (segbase + addr % segsize).</li>
+<li>Typically, all segments have <code>base=0, size=max</code>, so segmentation is a no-op.</li>
+<li>Can change segments: in Linux, <code>modify_ldt()</code> system call.</li>
+<li>Can change segment selectors: just <code>MOV %ds</code>, etc.</li>
+</ul>
+
+<h3>Limiting code/data to module's size:</h3>
+
+<ul>
+<li>Add a new segment with <code>offset=0, size=256MB.</code></li>
+<li>Set all segment selectors to that segment.</li>
+<li>Modify verifier to reject any instructions that change segment selectors.</li>
+<li>Ensures all code and data accesses will be within [0..256MB).</li>
+<li>(NaCl actually seems to limit the code segment to the text section size.)</li>
+</ul>
+
+<h3>What would be required to run Native Client on a system without segmentation?</h3>
+
+<ul>
+<li>For example, AMD/Intel decided to drop segment limits in their 64-bit CPUs.
+<ul>
+<li>One practical possibility: run in 32-bit mode.</li>
+<li>AMD/Intel CPUs still support segment limits in 32-bit mode.</li>
+<li>Can run in 32-bit mode even on a 64-bit OS.</li>
+</ul></li>
+<li>Would have to change the computed-jump code to limit target to 256MB.</li>
+<li>Would have to add runtime instrumentation to each memory read/write.</li>
+<li>See the paper in additional references below for more details.</li>
+</ul>
+
+<h3>Why doesn't Native Client support exceptions for modules?</h3>
+
+<ul>
+<li>What if module triggers hardware exception: null ptr, divide-by-zero, etc.</li>
+<li>OS kernel needs to deliver exception (as a signal) to process.</li>
+<li>But Native Client runs with an unusual stack pointer/segment selector <code>%ss</code>.
+<ul>
+<li>So if the OS tried to deliver the exception, it would terminate the program</li>
+</ul></li>
+<li>Some OS kernels refuse to deliver signals in this situation.</li>
+<li>NaCl's solution is to prohibit hardware exceptions altogether.</li>
+<li>Language-level exceptions (e.g., C++) do not involve hardware: no problem.</li>
+</ul>
+
+<h3>What would happen if a NaCl module had a buffer overflow?</h3>
+
+<ul>
+<li>Any computed call (function pointer, return address) has to use 2-instr jump.</li>
+<li>As a result, can only jump to validated code in the module's region.</li>
+<li>Buffer overflows might allow attacker to take over module.</li>
+<li>However, can't escape NaCl's sandbox.</li>
+</ul>
+
+<h3>Limitations of the original NaCl design?</h3>
+
+<ul>
+<li>Static code: no JIT, no shared libraries.</li>
+<li>Dynamic code supported in recent versions (see additional refs at the end).</li>
+</ul>
+
+<h2>Invoking trusted code from sandbox</h2>
+
+<ul>
+<li>Short code sequences that transition to/from sandbox located in [4KB..64KB).</li>
+<li><strong>Trampoline</strong> undoes the sandbox, enters trusted code.
+<ul>
+<li>Starts at a 32-byte multiple boundary.</li>
+<li>Loads unlimited segment into <code>%cs, %ds</code> segment selectors.</li>
+<li>Jumps to trusted code that lives above 256MB.</li>
+<li><em>Slightly tricky:</em> must ensure trampoline fits in 32 bytes.
+<ul>
+<li>(Otherwise, module could jump into middle of trampoline code..)</li>
+</ul></li>
+<li>Trusted code first switches to a different stack: why?
+<ul>
+<li>the NaCl module stack is incapable of receiving exceptions, and
+the library code called by the trampoline could get exceptions</li>
+<li>also, in the paper they mention this new stack, which is per-thread
+will reside outside the untrusted address space, so as to protect
+it from <strong>attacks by other NaCl module threads</strong>!</li>
+</ul></li>
+<li>Subsequently, trusted code has to re-load other segment selectors.</li>
+</ul></li>
+<li><strong>Springboard</strong> (re-)enters the sandbox on return or initial start.
+<ul>
+<li>Springboard slots (32-byte multiples) start with <code>HLT</code> (halt) instruction.
+<ul>
+<li>Prevents computed jumps into springboard by module code.</li>
+</ul></li>
+<li>Re-set segment selectors, jump to a particular address in NaCl module.</li>
+</ul></li>
+</ul>
+
+<h3>What's provided by the service runtime? (NaCl's "system call" equivalent)</h3>
+
+<ul>
+<li>Memory allocation: sbrk/mmap.</li>
+<li>Thread operations: create, etc.</li>
+<li>IPC: initially with Javascript code on page that started this NaCl program.</li>
+<li>Browser interface via NPAPI: DOM access, open URLs, user input, ..</li>
+<li>No networking: can use Javascript to access network according to SOP.</li>
+</ul>
+
+<h2>How secure is Native Client?</h2>
+
+<ul>
+<li>List of attack surfaces: start of section 2.3.</li>
+<li>Inner sandbox: validator has to be correct (had some tricky bugs!).</li>
+<li>Outer sandbox: OS-dependent plan.
+<ul>
+<li>On Linux, probably seccomp.</li>
+<li>On FreeBSD (if NaCl supported it), Capsicum would make sense.</li>
+</ul></li>
+<li>Why the outer sandbox?
+<ul>
+<li>Possible bugs in the inner sandbox.</li>
+</ul></li>
+<li>What could an adversary do if they compromise the inner sandbox?
+<ul>
+<li>Exploit CPU bugs.</li>
+<li>Exploit OS kernel bugs.</li>
+<li>Exploit bugs in other processes communicating with the sandbox proc.</li>
+</ul></li>
+<li>Service runtime: initial loader, runtime trampoline interfaces.</li>
+<li>Inter-module communication (IMC) interface + NPAPI: complex code, can (and did) have bugs.</li>
+</ul>
+
+<h3>How well does it perform?</h3>
+
+<ul>
+<li>CPU overhead seems to be dominated by NaCl's code alignment requirements.
+<ul>
+<li>Larger instruction cache footprint.</li>
+<li>But for some applications, NaCl's alignment works better than gcc's.</li>
+</ul></li>
+<li>Minimal overhead for added checks on computed jumps.</li>
+<li>Call-into-service-runtime performance seems comparable to Linux syscalls.</li>
+</ul>
+
+<h3>How hard is it to port code to NaCl?</h3>
+
+<ul>
+<li>For computational things, seems straightforward: 20 LoC change for H.264.</li>
+<li>For code that interacts with system (syscalls, etc), need to change them.
+<ul>
+<li>E.g., Bullet physics simulator (section 4.4).</li>
+</ul></li>
+</ul>
+
+<h2>Additional references</h2>
+
+<ul>
+<li><a href="http://static.usenix.org/events/sec10/tech/full_papers/Sehr.pdf">Native Client for 64-bit x86 and for ARM.</a></li>
+<li><a href="http://research.google.com/pubs/archive/37204.pdf">Native Client for runtime-generated code (JIT).</a></li>
+<li><a href="http://css.csail.mit.edu/6.858/2012/readings/pnacl.pdf">Native Client without hardware dependence.</a></li>
+<li>Other software fault isolation systems w/ fine-grained memory access control:
+<ul>
+<li><a href="http://css.csail.mit.edu/6.858/2012/readings/xfi.pdf">XFI</a></li>
+<li><a href="http://research.microsoft.com/pubs/101332/bgi-sosp.pdf">BGI</a></li>
+</ul></li>
+<li><a href="http://www.cse.lehigh.edu/~gtan/paper/rocksalt.pdf">Formally verifying the validator.</a></li>
+</ul>

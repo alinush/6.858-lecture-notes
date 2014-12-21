@@ -1,0 +1,322 @@
+Economics of spam
+=================
+
+Administrivia.
+  Quiz solutions and grades posted.
+  Course eval.
+  Final project presentations: we will post schedule.
+    35 groups: 3 minutes per group.
+    Tentatively, plan to do a 2-hour session, until 1pm.
+    Let us know if your group has a hard conflict with 12:30pm-1pm.
+  Final project check-off: sign up for a TA slot.
+
+What does this paper have to do with security?
+  Trying to understand computer security from an economic perspective.
+  So far, we've focused on security from a technical point of view.
+    How can an adversary can compromise a system?
+    How do we ensure that an adversary cannot violate the security policy?
+  Alternative view: why is the adversary trying to compromise our system?
+    Might seem a bit philosophical, but gives rise to other approaches.
+    E.g., maybe we can make it not worthwhile for the adversary.
+      Raise costs, pass laws prohibiting something, require extra checks, ..
+    More about social / economic motivations rather than technical design.
+  Of course, this is not going to work in all cases.
+    Some adversary may still want to compromise our system,
+      if only to prove this approach wrong..
+    But may work for some classes of attacks.
+
+What security problems might be usefully analyzed in this way?
+  Sending/receiving email spam, comment spam in a blog, etc.
+  End-user computers being taken over to run a botnet.
+  Malware displaying pop-up ads, change default search engine, etc.
+  Web server compromised, inserting links on web site, hosting malware.
+  Extortion DoS attacks.
+
+What might not be a great fit?
+  Probably not things like stuxnet.
+    Motivations are hard to quantify, likely significant.
+    Costs are pretty low: some folks from LL estimated few million USD.
+    Hard to increase costs, short of "just" making computers more secure.
+    Economic approach would likely require deterrence: penalties after the fact.
+    Technically, would need accountability.
+    No strong accountability in either computers or networks currently.
+  Targeted espionage attacks.
+
+What's the motivation for an adversary to mount these attacks?
+  For many such attacks, motivation is largely financial.
+  Significant ecosystem for making money off of compromised systems.
+  Marketplaces to buy/sell almost any kind of resources.
+    Compromised systems.
+      Entire compromised machine.
+      Access to a compromised web site (post spam, links, redirectors, malware).
+      Compromised email accounts (e.g., gmail).
+      Running a service on an existing botnet (spam, DoS).
+    Tools.
+      Malware tools / kits.
+      Bugs, vulnerabilities, exploits.
+      Affiliate programs.
+    Stolen information.
+      SSNs, credit card numbers, email addresses, etc.
+    ...
+
+Where does the money come from?
+  Broadly, either:
+    - user willingly spends money (buys something from "attacker"), or
+    - attacker defrauds user (steals money from bank, misuses credit card, ..)
+  This paper looks at where money comes from in the spam model.
+    In particular, sales of drugs, knock-off goods, and software.
+  Main steps:
+    Advertising: somehow getting the user to click on a link.
+    Click support: presenting a shopping site for user that clicks on link.
+    Realization: allowing user to buy something, accept money, ship product.
+  Ultimately, money comes from the last part in this chain when user purchases.
+    Many components are outsourced or supported via affiliate programs.
+    Paid either per click, a share of actual purchase amount, etc.
+  Next: what are the steps in detail, and how hard is it to disrupt them?
+
+Advertising: how to get the user to click on a link?
+  Typical approach: send email spam.
+    (Other methods also work: blog/comment spam, spam in social networks, ..)
+  Cost of sending spam: $60 per million spam messages, at retail.
+    [ Ref: Stefan's talk from a year+ ago. ]
+    Actual costs much lower for direct operators of a spam botnet.
+    Delivery and click rates are quite low,
+      so sending spam has to be be really cheap, in order to be profitable.
+    Earlier study by some of the same guys:
+      ~10k clicks, 28 attempts to purchase for ~350M spams sent.
+      "Action" rate higher for downloading, running screensaver: ~10% of clicks.
+  How can we make sending spam more expensive?
+    IP-level blacklists.
+      Used to work for a while, but only if adversary has few IPs.
+    Charging for sending email?
+      Old idea, in various forms: money, computation, CAPTCHAs (later).
+      Can this work?  How to get everyone to adopt this at once?
+      Will this work even if everyone adopts at once?  Compromised desktops.
+        (But even with compromised desktops, charging per message may be
+         high enough of a bar to greatly reduce spam: needs to be very cheap!)
+  Three workarounds for adversary:
+    Large-scale botnets give access to many IP addresses.
+    Compromised webmail accounts give access to special IP addresses.
+      Yahoo, Gmail, Hotmail cannot be blacklisted.
+    Hijack IP addresses (using BGP announcements).
+  Still, workarounds are not free, incurs some cost for spammer.
+    Cost of sending spam used to be even lower before IP-level blacklists.
+
+Using botnets for sending spam.
+  Typical botnet:
+    Many compromised machines, running botnet software.
+    Command&control (C&C) server/infrastructure for sending commands to bots.
+    Bots periodically get new tasks from C&C infrastructure.
+  Individual bot machines have a variety of useful resources:
+    Physical: IP address (good for sending spam), bandwidth, CPU cycles.
+    Data: email contacts (good for sending spam), credit card numbers, ..
+  Hard to prevent bot machines from sending spam -- millions of bot IPs.
+  Can we prevent adversary from building up or controlling large botnet?
+
+Installing botnet malware on end-hosts.
+  Price per host: ~$0.10 for US hosts, ~$0.01 for hosts in Asia.
+  [ These and other prices mostly come from Stefan's talk; see ref below ]
+  Seems hard to prevent; many users will happily run arbitrary executables.
+
+Controlling the botnet.
+  Centralized C&C infrastructure: adversary needs "bullet-proof" hosting.
+  What to do if hosting service is taken down?
+    Adversary can use DNS to redirect: "fast flux".
+  How hard is it to take down botnet's DNS domain name?
+    Can take down either domain's registration, or the domain's DNS server.
+    Adversary can use domain flux, span many separate registrars.
+    Harder to take down: requires coordination between registrars!
+    Happened for Conficker: significant / important enough..
+  Decentralized C&C infrastructure: peer-to-peer networks.
+    Allows bot master to operate fewer or no servers; hard to take down.
+
+Compromised webmail accounts.
+  Effective at delivering spam, since everyone accepts email from Yahoo, etc.
+  Webmail providers want to prevent adversary from compromising many accounts.
+    Want to prevent spam, or all mail from them may be counted as spam?
+    Want to ensure users are real: someone has to pay for things via ads!
+  What's the plan for this?
+    Monitor messages being sent by each account, detect suspicious patterns.
+    For suspicious messages and initial signup / first few msgs, use CAPTCHA.
+      Present user with some image/sound, ask to transcribe, hard for computer.
+  How hard is it to get a compromised webmail account?
+    Price per account: ~$0.01-0.05 per account on Yahoo, Gmail, Hotmail, etc.
+
+Why are webmail accounts so cheap?  What happened to CAPTCHAs?
+  Adversaries build services to solve CAPTCHAs, just a matter of money.
+  Turns out quite cheap: ~$0.001 per CAPTCHA, low latency.
+  Surprisingly, mostly done by humans: outsource to any country w/ cheap labor.
+    Specialized versions of sites like Amazon's Mechanical Turk.
+  Another plan: reuse CAPTCHA image on some other site, ask visitor to solve.
+  Is it worth it to have more extensive checks?
+    E.g., gmail sometimes asks for an SMS-based verification.
+
+Click support: user looks up hostname from URL via DNS, contact web server, etc.
+  Spammer needs to register domain name.
+  Spammer needs to run a DNS server.
+  Spammer needs to run a web server.
+
+  Why do the spammers bother with domain names?  Can just have IP addresses..
+    Recovery from server takedowns.
+    Invested money in sending spam, so want to make sure the link keeps working.
+  URLs often point to redirection sites.
+    Free redirectors like bit.ly or other URL shorteners.
+    Various compromised sites.
+  Why are redirection sites useful?
+    Spam filtering systems might black-list URLs seen in spam emails.
+    Redirect hides real server hostname.
+    Loading URLs from emails is dangerous: e.g., account verification URLs.
+      Spam filtering systems would be very unlikely to load random URLs.
+    Compromised sites used for redirects.
+      This means spam filter would have to blacklist real web site.
+  Spammers sometimes use botnets as web servers or proxies.
+    Hide the real web server IP address.
+
+In some cases affiliate program provider runs some/all of these services.
+  Would taking down an affiliate program work?
+  To some extent yes, but would be hard to take down entire organization.
+  Even then, non-trivial number of different affiliate programs.
+
+How could click support be made more costly for spammers?
+  Black-listing URLs.
+    Redirection sites make this less effective: real site is hidden.
+    Adversaries "hide" the real site: redirection done in JS, Flash, etc.
+    Error-prone: botnet operators purposely inject legitimate URLs!
+  Take down specific domains, servers.
+
+How hard is it to take down individual domains / servers?
+  Depends on the registrar or hosting provider.
+  Figures 3, 4, 5 in the paper.
+  Bullet-proof hosting providers are more expensive, but plentiful.
+  Even if taken down, relatively easy to replace.
+  Note that domain flux less applicable.
+    Fixed URLs in spam.
+    Redirection could go to a domain flux address, or to a fast-flux DNS name.
+
+What happens in realization?
+  Two steps:
+    User needs to pay for goods.
+    User needs to receive goods in the mail (or download software).
+
+Payment protocol: almost invariably credit cards.
+  Important parties:
+    customer
+    merchant
+    acquiring bank (merchant's)
+    issuing bank (customer's)
+    association network (Visa, Mastercard, ..)
+    payment processor (helps merchant deal with this protocol)
+  CC info: customer -> merchant -> payment processor -> acquiring bank
+                    -> association network -> issuing bank.
+  Issuing bank decides whether transaction looks legit, sends approval back.
+
+For physical goods, supplier typically ships the goods directly to purchaser.
+  "Drop shipping".
+  Affiliate program does not need to stockpile physical products.
+  Authors speculate that there's plenty of suppliers, not a bottleneck.
+
+Why did spammers properly classify their credit card transactions?
+  High fines for mis-coded transactions that are subject to chargebacks.
+
+Why do spammers actually ship the goods?
+  Credit card association network tracks number of "chargeback" requests.
+  Penalties if number of chargeback transactions is too high (>1%).
+  Charging customers and not shipping goods is not sustainable w/ few banks.
+  PharmaLeaks paper: some programs have over $10M/yr revenue!
+
+Appears that there's a bottleneck in acquiring banks for CC processing.
+  Table V, Figure 5 in the paper (3 banks: Azerbaijan, ..).
+  CCS'12 paper: 30 acquiring banks seen over 2 years -- still quite low.
+  Paper claims it's plausible to focus on these banks to address spam.
+  Why?
+    High cost to switch banks.
+    Financial risk in switching.
+  How?
+    Try to convince these banks to stop dealing with spammers?
+    Convince issuing banks to blacklist these acquiring banks?
+
+Why should the banks stop doing business with these spammers?
+  Less clear.
+  Some of their activities are only tangentially illegal.
+  Spamming is distasteful but not clear how criminal it is.
+  Not all of their customers might be from spam (also Google searches, etc).
+  Perhaps negative publicity, perhaps cost of doing business in the long term..
+
+Since this paper was published, credit card networks have taken some action.
+  Mostly Visa (for reasons unclear, MasterCard was less affected).
+    "Global Brand Protection Program".
+  Online pharmacy transactions classified as "high risk": higher costs.
+  More aggressive fines.
+
+Victims of counterfeit goods have also pushed banks to shut down sellers.
+  CCS'12 paper reports pirated software sellers were significantly affected.
+    Switching banks is expensive, time-consuming.
+    In the meantime, cannot process orders.
+  Coordinated effort by software companies.
+  Clear violation of law: easier to convince credit card companies to stop.
+
+Response from the "spammers":  [CCS'12]
+  Avoid clear-cut illegal activities (trademark/copyright infringement).
+  Mis-code credit card transactions to avoid being flagged as "high risk".
+    But this opens them up to penalties if banks/CC network discover this.
+  Launder credit card transactions through another legitimate business.
+  Accept other forms of payment.
+    Western Union, ACH/eCheck, COD by delivery company.
+    Bitcoin is "promising" but currently hard to use for customers.
+    [ Some data extortion malware recently used Bitcoin for monetizing. ]
+
+How did the paper authors learn all of this?
+  Collect lots of spam.
+    Infiltrate some botnets (from past work).
+    Monitor spam filters (set up lots of email addresses to collect spam).
+    Extract URLs from feeds provided by spam black-listing organizations.
+  Crawl URLs specified in spam.
+    Resolve hostname many times to detect dynamic names, many web servers.
+    Careful not to crawl too many URLs from same source IP.
+    Spam hosting providers block crawlers.
+    Crawl using Firefox to avoid detection (wget, w3m would be too obvious).
+  Why not use Tor?
+    Easy target for blocking.
+    Seems unlikely that Tor users (technically savvy) would click on spam.
+    Sellers would not lose any real customers by blocking Tor exit nodes.
+  Do clustering / tagging on page content to identify affiliate program.
+    In part authors did manual work identifying affiliate programs.
+    Why is this needed?
+    Want to figure out whether taking down an affiliate matters.
+  Purchasing.
+    Why is this needed?  Track information in the credit card protocol.
+    Cooperated w/ a card issuer to issue new cards, record CC protocol details.
+    Careful to avoid tipping off the sellers: use IP near shipping address, etc.
+
+Would spammers be able to block researchers from finding payment providers?
+  Some potential steps observed by the CCS'12 paper:
+    Phone verification of orders.
+    Require copies of driver's license / credit card for ordering.
+    Block IP addresses that had charge-backs in the past.
+    Block IP addresses commonly seen crawling.
+    Extreme: allow orders only from existing customers.
+  This paper's authors try to avoid these measures, but aren't fully successful.
+    Quite a bit of failed orders via the ZedCash affiliate program.
+  But these steps can significantly reduce legitimate customer orders too.
+    Customers don't want to send copies of driver's license, etc.
+
+What about legal or ethical concerns?
+  Are these guys supporting the spammers by buying their goods?
+  Probably a drop in the spammers' overall sales volume..
+
+Do you think this is a useful approach for dealing with security problems?
+  Probably good for spam.
+    Users directly buying something), botnets, click fraud, maybe DoS attacks.
+    Seems quite promising in terms of reducing overall levels of spam.
+  Could be good for malware that steals CC#, bank info (i.e., theft).
+    Interesting to see how adversary would "cash out" stolen accounts.
+  Probably not so great for targeted attacks that are after specific info
+    (stuxnet, industrial espionage, etc).
+
+Reference:
+  http://css.csail.mit.edu/6.858/2013/readings/captcha-econ.pdf
+  http://css.csail.mit.edu/6.858/2013/readings/priceless.pdf [CCS'12]
+  http://css.csail.mit.edu/6.858/2013/readings/pharmaleaks.pdf
+  http://www.usenix.org/media/events/atc11/tech/videos/savage.mp4
+  http://research.microsoft.com/pubs/167719/whyfromnigeria.pdf
+

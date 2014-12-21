@@ -1,0 +1,252 @@
+Backtracking intrusions
+=======================
+
+Overall problem: what to do once an intrusion occurs?
+
+Intrusions inevitable.
+  Software bugs.
+  Weak passwords.
+  Incorrect permissions / settings.
+  ...
+
+What should an administrator do when the system is compromised?
+  Notice something is wrong: detect the intrusion ("detection point").
+    E.g., there's a suspicious process, a corrupted file, new accounts, ..
+    Result of this step is a suspect file, network conn, file name, or process.
+  Find how the attacker got access ("entry point").
+    E.g., used a compromised account, exploited buffer overflow, ..
+    This is what Backtracker helps with.
+  Fix the problem that allowed the compromise.
+    E.g., change weak password, patch buggy program.
+  Identify and revert any damage caused by intrusion
+    E.g., backdoors, accounts, trojaned binaries, key loggers, botnet, etc.
+
+How would an administrator detect the intrusion?
+  Modified, missing, or unexpected file; unexpected or missing process.
+  Could be manual (found extra process or corrupted file).
+  Tripwire: check hashes of system files against pre-computed "known-good" list.
+    Can detect unexpected changes to system files.
+    Variant of this approach used on MIT's Athena dialups.
+  Network traffic analysis (IDS) can point out unexpected / suspicious packets.
+  False positives is often a problem with intrusion detection schemes.
+    Tripwire, network IDS systems, etc.
+
+What good is finding the attacker's entry point?
+  Curious administrator.
+  In some cases, might be able to fix the problem that allowed compromise.
+    User with a weak / compromised password.
+    Bad permissions or missing firewall rules.
+    Maybe remove or disable buggy program or service.
+    Backtracker itself will not produce fix for buggy code.
+    Can we tell what vulnerability the attacker exploited?
+      Not necessarily: all we know is object name (process, socket, etc).
+      Might not have binary for process, or data for packets.
+  Probably a good first step if we want to figure out the extent of damage.
+    Initial intrusion detection might only find a subset of changes.
+    Might be able to track forward in the graph to find affected files.
+
+Why is it difficult to track down the entry point?
+  E.g., is it sufficient to detect login session that started suspect process?
+  Adversary can install backdoors, create new accounts, etc.
+  Installing backdoor or creating account could also happen via backdoor.
+  Want to track down the root of this whole chain of events.
+
+Do we need Backtracker to find out how the attacker gained access?
+  Can look at disk state: files, system logs, network traffic logs, ..
+  Files might not contain enough history to figure out what happened.
+  System logs (e.g., Apache's log) might only contain network actions.
+  System logs can be deleted, unless otherwise protected.
+    Of course, this is also a problem for Backtracker.
+  Network traffic logs may contain encrypted packets (SSL, SSH).
+    If we have forward-secrecy, cannot decrypt packets after the fact.
+  Logs might contain too much data: lots of legitimate stuff.
+
+Is it always possible to detect an intrusion, or to track down attack?
+  If adversary obtains root access, unclear if we can trust kernel.
+  Process running as root (uid 0) can access kernel memory.
+  Can change kernel code (e.g., insmod), change data structures, etc.
+  "Root kits" are commonly used by attackers: library of kernel changes.
+    E.g., modify system calls to hide certain files or processes.
+  Cannot fully trust a system after adversary gains root access.
+
+Backtracker's overall plan:
+  Record dependencies between object during normal operation.
+  When attack detected, administrator calls Backtracker's GraphGen.
+  Specifies detection point.
+  Gets a graph of objects that should include the entry point.
+
+Backtracker objects.
+  Processes, files (including pipes and sockets), file names.
+  How does Backtracker name objects?
+    File name: pathname string.
+      Canonical: no ".." or "." components.
+      Unclear what happens to symlinks.
+    File: device, inode, version#.
+      Why track files and file names separately?
+      Where does the version# come from?
+    Why track pipes as an object, and not as dependency event?
+      Might not know who the recipient is, at the time of the write.
+    Process: pid, version#.
+      Why do they need a version number?
+      Where does the version# come from?
+      How long does Backtracker have to track the version# for?
+
+Backtracker events.
+  Process -> process: fork, exec, signals, debug.
+  Process -> file: write, chmod, chown, utime, mmap'ed files, ..
+  Process -> filename: create, unlink, rename, ..
+  File -> process: read, exec, stat, open.
+  Filename -> process: open, readdir, anything that takes a pathname.
+  File -> filename, filename -> file: none.
+  How does Backtracker name events?
+    Not named explicitly.
+    Event is a tuple (source-obj, sink-obj, time-start, time-end).
+  What happens to memory-mapped files?
+    Cannot intercept every memory read or write operation.
+    Event for mmap starts at mmap time, ends at exit or exec.
+  Implemented: process fork/exec, file read/write/mmap, network recv.
+    In particular, none of the filename stuff.
+
+Distinction: affecting vs. controlling an object.
+  Many ways to affect execution (timing channels, etc).
+  Adversary interested in controlling (causing specific code to execute).
+  High-control vs. low-control events.
+  Prototype does not track file names, file metadata, etc.
+  How could you hide from Backtracker via low-control events?
+    E.g., exploit buffer overflow in some program using a long pathname.
+    Backtracker would in effect treat this buggy program as the entry point.
+
+How does Backtracker generate this dependency graph?
+  EventLogger records, timestamps all relevant events (system calls).
+  Two different EventLogger implementations.
+  Key questions to consider:
+    How to obtain the events?
+    Where to store the event log?
+    (Want to avoid adversary from modifying the log if they get root access.)
+
+Simple design: in-kernel EventLogger.
+  Modify system call handler in the kernel to record certain system calls.
+  Store the log somewhere safe; suggestions from the paper:
+    On another machine over the network.
+    In some protected FS (not quite safe from kernel compromises).
+    In the host virtual machine monitor, if running in a guest VM.
+
+Alternative design: log without modifying the OS.
+  Run in a virtual machine monitor.
+  VMM intercepts system calls, extracts state from guest virtual machine:
+    Event (look at system call registers).
+    Currently running process (look at kernel memory for current PID).
+    Object being accessed (look at syscall args, FD state, inode state).
+    Logger has access to guest kernel's symbols for this purpose.
+    Logger knows the exact kernel version, to interpret data structures.
+  How to track version# for objects (inodes, pids)?
+    Might be able to use NFS generation numbers for inodes.
+    Need to keep a shadow data structure for PIDs.
+    Bump generation number when a PID is reused (exit, fork, clone).
+
+What do we have to trust?
+  Virtual machine monitor trusted to keep the log safe.
+  Kernel trusted to keep different objects isolated except for syscalls.
+  What happens if kernel is compromised?
+    Adversary gets to run arbitrary code in kernel.
+    Might not know about some dependencies between objects.
+    Cannot fully trust the log from the point the adversary gets root access.
+  Can we detect kernel compromises?
+    If accessed via certain routes (/dev/kmem, kernel module), then yes.
+    More generally, kernel could have buffer overflow: hard to detect.
+
+Given the log, how does Backtracker find the entry point?
+  Administrator specifies detection point.
+  Backtracker presents the dependency graph to the administrator.
+    Show only those events and objects that lead to detection point.
+    Use event times to trim events that happened too late for detection point.
+  Asks administrator to look at the graph and find the entry point.
+
+Optimizations to make the graph manageable.
+  Hide read-only files.
+    Seems like an instance of a more general principle.
+    Let's assume adversary came from the network.
+    Then, can filter out any objects with no (transitive) socket deps.
+  Hide nodes that do not provide any additional sources.
+    Effectively collapse self-contained cycles.
+    Ultimate goal of graph: help administrator track down entry point.
+    Some nodes add no new sources to the graph.
+    More general than read-only files (above):
+      Can have socket sources, as long as they're not new socket sources.
+      E.g., shell spawning a helper process.
+      Could probably extend to temporary files created by shell.
+  Use several detection points.
+    Sounds promising, but not really evaluated.
+  Potentially unsound heuristics:
+    Filter out low-control events.
+    Filter out well-known objects that cause false positives.
+      E.g., /var/log/utmp, /etc/mtab, ..
+
+How well does Backtracker work?
+  Authors set up a honeypot.
+    Caught several real-world attacks.
+    Adversaries routinely probe random machines, try to compromise them.
+  Also generated their own attack that was somewhat more involved.
+  Figures 6, 7, 8 seem to be reasonably clear for an administrator.
+  Optimizations / filtering rules do seem to help: compare with Figure 5!
+
+Do we really need a VM?
+  Authors used VM to do deterministic replay of attacks.
+  Didn't know exactly what to log yet, so tried different logging techniques.
+  In the end, mostly need an append-only log.
+  Once kernel compromised, no reliable events anyway.
+  Can send log entries over the network.
+  Can provide an append-only log storage service in VM (simpler).
+  Perhaps can use some trusted hardware to authenticate log (e.g., TrInc).
+
+How can an adversary elude Backtracker?
+  Avoid detection altogether.
+  Use low-control events.
+  Use events not monitored by Backtracker (e.g., ptrace).
+  Log in over the network a second time.
+    If using a newly-created account or back door, will probably be found.
+    If using a password stolen via first compromise, might not be found.
+  Compromise OS kernel.
+  Compromise the event logger (in VM monitor).
+  Intertwine attack actions with other normal events.
+    Exploit heuristics: write attack code to /var/log/utmp and exec it.
+    Read many files that were recently modified by others.
+      Other recent modifications become candidate entry points for admin.
+  Prolong intrusion.
+    Backtracker stores fixed amount of log data (paper suggests months).
+    Even before that expires, there may be changes that cause many dependencies.
+      Legitimate software upgrades.
+      Legitimate users being added to /etc/passwd.
+    Much more difficult to track down intrusions across such changes.
+
+Can we fix file name handling?
+  What to do with symbolic links?
+  Is it sufficient to track file names?
+    Renaming top-level directory loses deps for individual file names.
+    More accurate model: file names in each directory; dir named by inode.
+  Presumably not addressed in the paper because they don't implement it.
+
+How useful is Backtracker?
+  Easy to use?
+    Administrator needs to know a fair amount about system, Backtracker.
+    After filtering, graphs look reasonably small.
+  Reliable / secure?
+    Probably works fine for current attacks.
+    Determined attacker can likely bypass.
+  Practical?
+    Overheads probably low enough.
+    Depends on VM monitor knowing specific OS version, symbols, ..
+    Not clear what to do with kernel compromises
+    Probably still OK for current attacks / malware.
+  What about application-level attacks?
+    Things that involve PHP web applications, SQL databases, etc.
+    As-is, Backtracker would conflate everything: same objects do everything.
+    Need to extend design to include PHP invocation, SQL query objects, etc.
+  Would a Backtracker-like system help with Stuxnet?
+    Need to track back across a ~year of logs.
+    Need to track back across many machines, USB devices, ..
+    Within a single server, may be able to find source (USB drive or net).
+    Stuxnet did compromise the kernel, so hard to rely on log.
+  Perhaps a better graph analysis / filtering / ranking algorithm could help.
+    Machine learning?
+

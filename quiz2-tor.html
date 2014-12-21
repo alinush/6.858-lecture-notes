@@ -1,0 +1,112 @@
+<h1>Tor</h1>
+
+<hr />
+
+<h2>Resources</h2>
+
+<ul>
+<li><a href="http://css.csail.mit.edu/6.858/2014/readings/tor-design.pdf">Paper</a></li>
+<li>Blog posts: <a href="https://blog.torproject.org/blog/top-changes-tor-2004-design-paper-part-1">1</a>, <a href="https://blog.torproject.org/blog/top-changes-tor-2004-design-paper-part-2">2</a>, <a href="https://blog.torproject.org/blog/top-changes-tor-2004-design-paper-part-3">3</a></li>
+<li><a href="http://css.csail.mit.edu/6.858/2012/lec/l16-tor.txt">Lecture note from 2012</a></li>
+<li><a href="http://css.csail.mit.edu/6.858/2014/quiz.html">Old quizzes</a></li>
+</ul>
+
+<hr />
+
+<h2>Overview</h2>
+
+<ul>
+<li>Goals</li>
+<li>Mechanisms
+<ul>
+<li>Streams/Circuits</li>
+<li>Rendezvous Points &amp; Hidden services</li>
+</ul></li>
+<li>Directory Servers</li>
+<li>Attacks &amp; Defenses</li>
+<li>Practice Problems</li>
+</ul>
+
+<hr />
+
+<h2>Goals</h2>
+
+<ul>
+<li>Anonymous communication</li>
+<li>Responder anonymity
+<ul>
+<li>If I run a service like "mylittleponey.com" I don't want anyone
+associating me with that service</li>
+</ul></li>
+<li>Deployability / usability
+<ul>
+<li>Why a security goal? 
+<ul>
+<li>Because it increases the # of people using Tor, i.e. the <em>anonimity set</em></li>
+<li>...which in turn increases security
+<ul>
+<li>(adversary has more people to distinguish you amongst)</li>
+</ul></li>
+</ul></li>
+</ul></li>
+<li>TCP layer (Why? See explanations in lecture notes above)</li>
+<li><strong>NOT</strong> P2P (because more vulnerable?)</li>
+</ul>
+
+<hr />
+
+<h2>Circuit creation</h2>
+
+<p>TODO: Define circuit</p>
+
+<p>Alice multiplexes many TCP streams onto a few <em>circuits</em>. Why? Low-latency system, expensive to make new circuit.</p>
+
+<p>TODO: Define Onion Router (OR)</p>
+
+<p><em>Directory server</em>: State of network, OR public keys, OR IPs</p>
+
+<p>ORs:</p>
+
+<ul>
+<li>All connected to one another with TLS</li>
+<li>See blog post 1: Authorities vote on consensus directory document</li>
+</ul>
+
+<p>Example:</p>
+
+<pre><code>[ Draw example of Alice building a new circuit ]
+[ and connecting to Twitter.                   ]
+</code></pre>
+
+<hr />
+
+<h2>Rendezvous Points &amp; Hidden services</h2>
+
+<p>Example: </p>
+
+<pre><code>[ Add an example of Alice connecting to Bob's  ]
+[ hidden service on Tor                        ]
+</code></pre>
+
+<p>Bob runs hidden service (HS): </p>
+
+<ul>
+<li>Decides on long term PK/SK pair</li>
+<li>Publish introduction points, advertises on lookup service</li>
+<li>Builds a circuit to <em>Intro Points</em>, waits for messages</li>
+</ul>
+
+<p>Alice wants to connect to Bob's HS:</p>
+
+<ul>
+<li>Build circuit to new <em>Rendezvous Point (RP)</em> (any OR)
+<ul>
+<li>Gives <em>cookie</em> to RP</li>
+</ul></li>
+<li>Builds circuit to one of Bob's intro points and sends message
+<ul>
+<li>with <code>{RP, Cookie, g^x}_PK(Bob)</code></li>
+</ul></li>
+<li>Bob builds circuit to RP, sends <code>{ cookie, g^y, H(K)}</code></li>
+<li>RP connects Alice and Bob</li>
+</ul>

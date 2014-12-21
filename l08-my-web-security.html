@@ -1,0 +1,264 @@
+<h1>Web security</h1>
+
+<p>Web security for a long time meant looking at what the server was doing, since the client-side was very simple. On the server, CGI scripts were executed and they interfaced with DBs, etc.</p>
+
+<p>These days, browsers are very complicated:</p>
+
+<ul>
+<li>JavaScript: pages execute client-side code</li>
+<li>The Document Object Model (DOM) </li>
+<li>XMLHttpRequests: a way for JavaScript client-side code to fetch content from the web-server asynchronously
+<ul>
+<li>a.k.a AJAX</li>
+</ul></li>
+<li>Web Sockets</li>
+<li>Multimedia support (the <code>&lt;video&gt;</code> tag)</li>
+<li>Geolocation (webpages can determine physically where you are)</li>
+<li>Native Client, for Google Chrome</li>
+</ul>
+
+<p>For web-security, this means we're screwed: huge attack surface (See Figure 1)</p>
+
+<pre><code>likelihood
+of correct
+ness
+^
+|--\
+|   --\                --- we are here
+|      --\            /
+|         \          /
+|          \      &lt;--
+|           -----*----
+|-----------------------&gt;
+  # of features
+</code></pre>
+
+<p>Problems of composition: many layers</p>
+
+<p>One problem with the web is the <em>parsing contexts</em> problem</p>
+
+<pre><code>&lt;script&gt;var = "UNTRUSTED CONTENT FROM USER";&lt;/script&gt;
+</code></pre>
+
+<p>If the <em>untrusted</em> content had a quote in it, perhaps the attacker could modify the code into:</p>
+
+<pre><code>&lt;script&gt;var = "UNTRUSTED CONTENT"&lt;/script&gt; 
+&lt;script&gt; /* bad stuff from attacker here */ &lt;/script&gt;
+</code></pre>
+
+<p>Web specifications are long, tedios, boring, inconsistent, the size of the EU consistution (CSS, HTML) => they are vague aspirational documents that are never implemented.</p>
+
+<p>This lecture we'll focus on client-side web-security.</p>
+
+<p>Desktop applications come from a single principal (Microsoft, Google, etc)
+Web applications come from a bunch of principals.</p>
+
+<p><code>http://foo.com/index.html</code> (see Figure 2)</p>
+
+<ul>
+<li>Can analytics code access the facebook frame content?</li>
+<li>Can analytics code interact with the text inputs? Can it declare event handlers?</li>
+<li>What's the relationship beteen the Facebook frame (https) and the foo.com frame (http)?</li>
+</ul>
+
+<p>To answer these questions browsers use a security model called the <em>same origin policy</em></p>
+
+<p><em>Goal:</em> Two websites should not be able to tamper with each other, unless they want to.</p>
+
+<p>Defining what <em>tampering</em> means has gotten more complicated since the web first started.</p>
+
+<p><em>Strategy:</em> Each <em>resource</em> is assigned an origin. JS code (a resource itself) can only access resources from its own origin.</p>
+
+<p>What is an origin? An origin is a network protocol scheme + hostname + port. 
+Example: </p>
+
+<ul>
+<li><code>https://facebook.com:8181</code></li>
+<li><code>http://foo.com/index.html</code>, implicit port 80</li>
+<li><code>https://foo.com/index.html</code>, implicit port 443</li>
+</ul>
+
+<p>Loosely speaking, you can think of an origin as an UID in UNIX, with a frame being a <em>process</em>.</p>
+
+<p>Four ideas in implementation of origins:</p>
+
+<ol>
+<li><p>Each origin has client side resources</p>
+
+<ul>
+<li>Cookies, to implement state across different HTTP requests</li>
+<li>DOM storage, a fairly new interface, a key-value store</li>
+<li>A JavaScript namespace, defines what functions and interface are available to the origin (like the String class)</li>
+<li><p>The DOM tree: a JavaScript reflection of the HTML in a page</p>
+
+<pre><code>      [  HTML ]     
+      /       \     
+[ HEAD ]     [ BODY ]
+</code></pre></li>
+<li><p>A visual display area</p></li>
+</ul></li>
+<li>Each frame gets the origin of its URL </li>
+<li>Scripts execute with the authority of their frame origin</li>
+<li>Passive content (images, CSS files) gets <strong>zero</strong> authority from the browser
+<ul>
+<li>Content sniffing attacks</li>
+</ul></li>
+</ol>
+
+<p>Going back to our example: </p>
+
+<ul>
+<li>Google analytics and jQuery can do all sorts of stuff on the foo.com frame</li>
+<li>The Facebook frame's inline JS cannot do anything to the foo.com frame
+<ul>
+<li>but it can talk to the foo.com frame using the <code>postMessage()</code> API</li>
+</ul></li>
+<li>The JS code in the FB frame cannot issue an AJAX request to the foo.com webserver</li>
+</ul>
+
+<p>MIME types: text/html. All version of IE in the past would look at the first 256 bytes of an object and ignore the <code>Content-Type</code> header. As a result, IE would misinterpret the type of files (due to bugs). Attacker can put JS code in a .jpg file. IE coerces it into text/html and then executes the JS code in the page.</p>
+
+<h2>Frames and window objects</h2>
+
+<p>Frames represent these sort of separate JS universes</p>
+
+<p>A frame, w.r.t. to JS is an instance of a DOM node. Frames and window objects in JS point to each other. The window object acts like a namespace via which you can access any variable <code>x</code>.</p>
+
+<p>Frames get the origin of the frame's URL <code>OR</code> a suffix of the original domain name.</p>
+
+<p><code>x.y.z.com</code> can say "I want to set my origin to" <code>y.z.com</code> by assigning <code>document.domain</code> to <code>y.z.com</code>. This only works (or should) with suffixes of <code>x.y.z.com</code>. So it cannot do <code>document.domain = a.y.z.com</code>. Also, cannot set <code>document.domain = .com</code> because the site would be able to impact cookies in any .com website.</p>
+
+<p>Browsers distinguish between frames that assigned a value to document.domain and frames that did not.</p>
+
+<p>Two frames can access each if:</p>
+
+<ol>
+<li>Both frames set <code>document.domain</code> to the same value</li>
+<li>Neither of the frames has changed <code>document.domain</code> and both values match</li>
+</ol>
+
+<p>You have <code>x.y.z.com</code> (buggy or evil) trying to attack <code>y.z.com</code>, by shortening its domain. The browser will not allow this because y.z.com will have NOT changed its document.domain while x.y.z.com has.</p>
+
+<h2>DOM nodes</h2>
+
+<h2>Cookies</h2>
+
+<p>Cookies have a <em>domain</em> and a <em>path</em>.</p>
+
+<pre><code>*.mit.edu/6.858
+</code></pre>
+
+<p>If path is <code>/</code> then all paths in the domain have access to the cookie.</p>
+
+<p>On the client side there's <code>document.cookie</code>.</p>
+
+<p>Cookies have a <code>secure flag</code> which means HTTP content should not be able to access that cookie.</p>
+
+<p>When the browser generates a request, it's going to include all the matching cookies in that request (ambient authority).</p>
+
+<p>How can different frames access other frames' cookies? If other frames can write cookies for other frames, then an attacker could log the victim into the attacker's gmail account and possibly read emails sent by the user.</p>
+
+<p>Should <code>foo.co.uk</code> be allowed to set a cookie for <code>co.uk</code>? https://publicsuffix.org contains a list of all the top-level domains so that browsers do not allow cooking setting for domains like <code>co.uk</code>.</p>
+
+<h2>XMLHttpRequest</h2>
+
+<p>By default JS can only generate an AJAX request if it's going to its origin.</p>
+
+<p>There's a new paradigm called Cross Origin Request S. (CORS), where the server can use an ACL to allow other domains to access it. Server returns a header <code>Access-Control-Allow-Origin: foo.com</code> to indicate foo.com is allowed.</p>
+
+<h2>Images, CSS</h2>
+
+<p>A frame can load images from any origin it desires but it cannot actually inspect the bits. But it can infer the size of the image via the placement of other nodes in the DOM. </p>
+
+<p>Same for CSS.</p>
+
+<h2>JavaScript</h2>
+
+<p>If you do a cross-origin fetch of JS, that is allowed, but the frame cannot look at the source code. But the JS architecture kind of lets you because you can call the <code>toString</code> method on any public function <code>f</code>. The frame can also ask the web-server to fetch the JS for it and send it.</p>
+
+<p>JS code is often obfuscated.</p>
+
+<h2>Plugins</h2>
+
+<p>Java, Flash.</p>
+
+<p>A frame can run a plugin from any origin. HTML5 might make them obsolete.</p>
+
+<h2>Cross Site Request Forgery (CSRF)</h2>
+
+<p>An attacker can setup a page and embed a frame with the following source in it:</p>
+
+<pre><code>http://bank.com/xfer?amount=500&amp;to=attacker
+</code></pre>
+
+<p>The frame is set to be of size zero (invisible), Then the attacker gets the user to visit the page. Thus, he can steal money from the user.</p>
+
+<p>This is because the URL can be guessed and is not random.</p>
+
+<p>Solution: add some randomness to the URL.</p>
+
+<p>The server can generate a random token and embed it in the "Transfer Money" page sent to the user.</p>
+
+<pre><code>&lt;form action="/transfer.cgi" ...&gt;
+    &lt;input type="hiddne" name="csrf" value="a72fedb2129985bdc"&gt;
+</code></pre>
+
+<p>Now the attacker has to guess the token.</p>
+
+<h2>Network addresses</h2>
+
+<p>A frame can send HTTP and HTTPS requests to a host that matches its origin. The security of the same origin policy is tied to DNS security. Because origin names are DNS names, DNS rebinding attacks can work against you.</p>
+
+<p>Goal: Run attacker controlled JS with the authority of some victim website <code>victim.com</code></p>
+
+<p>Approach:  </p>
+
+<ol>
+<li>Register a domain name <code>attacker.com</code></li>
+<li>Attacker sets up a DNS server to respond to requests for <code>*.attacker.com</code></li>
+<li>Attacker gets user to visit <code>*.attacker.com</code></li>
+<li>Browser generates a DNS request to <code>attacker.com</code></li>
+<li>Attacker response has a small time-to-live (TTL)</li>
+<li>Meanwhile, the attacker configures the DNS server to bind <code>attacker.com</code> name to <code>victim.com</code>'s IP address</li>
+<li>Now if the user asks for a DNS resolution on attacker.com, he gets an address of victim.com</li>
+<li>The loaded attacker.com website wants to fetch a new object via AJAX. This request will now go to victim.com
+<ul>
+<li>Bad because attacker.com website just issued an AJAX request outside its origin.</li>
+</ul></li>
+</ol>
+
+<p>How can you fix this? </p>
+
+<ul>
+<li>Modify your DNS resolver to check that outside domains are not resolved to internal addresses.</li>
+<li>Enforce TTL to be 30 minutes</li>
+</ul>
+
+<h2>Pixels</h2>
+
+<p>Each frame gets its own bounding box and can draw wherever it wants there. Specifically, a parent frame can draw over a child frame (see Figure 3).</p>
+
+<p>Solutions: <br />
+ 1. Use frame busting code (JS to figure out if you've been put in a frame by someone else)</p>
+
+<p><code>
+  if (self != top) <br />
+      alert("I'm a child frame, so won't load") <br />
+</code> <br />
+ 2. Web server can send an HTTP response header called <code>X-Frame-Options</code> which tells the browser to not allow anyone to put its content into a frame.</p>
+
+<h2>Naming issues</h2>
+
+<p><code>c</code> in ASCII versus <code>c</code> in Cyrillic allows attacker to register a <code>cats.com</code> domain that immitates the real <code>cats.com</code></p>
+
+<h2>Plugins</h2>
+
+<p>Subtle incompatibilites with the rest of the browser.</p>
+
+<p>Java assumes different hostnames with the same IP address have the same origin (deviation from the SOP policy)</p>
+
+<p>x.y.com will be in the same origin as z.y.com if they share the same IP address.</p>
+
+<h2>HTML5 screen sharing</h2>
+
+<p>If you have a page that have multiple frames, a frame can take a screenshot of the entire browser.</p>

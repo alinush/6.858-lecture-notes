@@ -1,0 +1,249 @@
+
+<!-- saved from url=(0056)http://css.csail.mit.edu/6.858/2009/lec/l10-memauth.html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><style type="text/css"></style></head><body dir="ltr" style="max-width:8.5in" class=" hasGoogleVoiceExt">
+
+<h1>Memory Authentication (notes by Marten van Dijk)</h1>
+
+<b>Read:</b> R. Elbaz, D. Champagne, C. Gebotys, R.B. Lee,
+N. Potlapally, and L. Torres, "Hardware Mechanisms for Memory
+Authentication: A Survey of Existing Techniques and Engines", Trans. on
+Comput. Sci., pp. 1-22, 2009.
+
+<p>
+<b>Model (assumptions, security requirements, possible attacks):</b>
+
+</p><p>
+	What is memory authentication? The ability to verify that the data
+	read from memory by the processor at a given address is the data
+	it last wrote at this address.
+
+</p><p>
+	Why memory authentication? An adversary able to corrupt the
+	memory space can affect the computations performed by a trusted
+	computing platform. Assumptions: Too costly to provide a tamper
+	evident environment that includes memory. The trusted computing
+	platform is a single chip secure processor with limited on-chip
+	storage. It is resistant to all physical attacks, including
+	invasive ones. Whenever a sensitive computation is finalized,
+	the authenticity of the sequence of off-chip memory operations
+	during the computation needs to be verified. Notice that,
+	depending on the application, this happens all the time, or
+	sometimes. This leads to different authentication strategies
+	(tree based or not tree based).
+
+</p><p>
+	Is it realistic to have a single chip processor which is
+	resistant to all physical attacks? It may be acceptable to
+	be only resistant to all physical attacks that cost not too
+	much. This excludes attacks performed by the common hacker. We
+	do not try to protect against attacks performed by engineers
+	with access to expensive laboratories. The required security
+	(and its costs) is part of a business model.
+
+</p><p>
+	Data integrity refers to the ability to detect any adversarial
+	corruption or tampering of data. What is its relation to memory
+	authentication? Memory authentication implies data integrity.
+
+</p><p>
+	The objective of memory authentication is to thwart active
+	attacks that tamper with off-chip memory contents. What are
+	these active attacks? Spoofing: existing memory block is
+	exchanged with an arbitrary fake one. Splicing/Relocation:
+	replace a memory block at address A with a block at address
+	B. Replay: a memory block located at a given address is
+	recorded and inserted at the same address at a later point
+	in time.
+
+</p><p>
+	What is a software attack? A software attack is an
+	active attack performed by a compromised OS or malicious
+	application. We cannot trust the OS, even if the OS kernel
+	is designed to isolate sensitive applications from malicious
+	software. For now, we will not consider software attacks.
+
+</p><p>
+	What other security requirements are of interest? Access
+	control; applications should not be able to access one
+	another's application specific data. Data confidentiality;
+	encrypt sensitive data to ensure privacy.
+
+</p><p>
+	Why are these requirements not sufficient? An attacker
+	may manipulate encrypted data. So, we also need memory
+	authentication.
+
+</p><p>
+	Does encryption of sensitive data really ensure privacy? What
+	about correlating memory access patterns? This may leak
+	information about the nature of the application and to which
+	other applications, with which it shares memory, it is related.
+
+</p><p>
+<b>Solutions (tree based solutions and a non-tree based solution):</b>
+
+</p><p>
+	What is a naive solution for memory authentication? Store
+	digest of entire memory in on-chip storage. Unacceptable.
+
+</p><p>
+	What is a next best solution? Store a digest of every memory
+	block (cache block), see Figure 3(a). Reduces memory bandwidth
+	overhead, but needs too much (expensive) on-chip memory.
+
+</p><p>
+	What is a slightly better solution? Using nonces costs less
+	on-chip memory, see Figure 3(b). If the nonce generator runs
+	out of range, need to reset key k and update all memory (this
+	can be done in idle time). Does the nonce generator need to
+	output unique nonces, do nonces for different addresses need to
+	be different? No, if we compute each MAC as a function of the
+	key k, nonce N, and address A. So, we can use smaller nonces,
+	leading to less on-chip storage. When a smaller nonce specific
+	to a certain address runs out of range, this address cannot
+	be used until key k is reset. If we use smaller nonces of say
+	16 bits, can we use random nonces? No, with probability 1/
+	2^16 this leads to a collision and possibly to an attack. We
+	need deterministic nonces: for each update, just increment
+	the corresponding nonce by 1.
+
+</p><p>
+	How can we add data confidentiality? Replace MAC by an
+	encryption E, see Figure 3(c).
+
+</p><p>
+	What trick improves the current solutions? Integrity trees
+	with Hash (Merkle tree), MAC + nonces, or E + nonces. See
+	Figure 5. How does it work? Merkle tree update procedure is
+	sequential: computation of a new hash node in a branch must
+	be completed before the update of the next branch node can
+	start. The PAT read and update procedures are parallelizable,
+	how does this work? An intermediate node stores the MAC of
+	the nonces stored in its children and these are all known
+	beforehand. An intermediate node does not store the MAC
+	of the MACs stored in its children (does would be similar
+	to the Merkle tree). The TEC-Tree uses encryption, and
+	does not store nonces. How are nonces retrieved during an
+	update? Use decryption. Is a mixture of reads and updates
+	parallelizable? No.
+
+</p><p>
+	How do we find the address of a parent node? Use tree
+	traversal, which leads to (eq. 1).
+
+</p><p>
+	How can we make use of the cache to improve performance? Tree
+	read and update procedures are terminated as soon as a cached
+	hash or the root is encountered.
+
+</p><p>
+	What is a Bonsai Merkle Tree? Use many smaller trees using
+	counters/nonces. Store their roots. Protect the counters
+	using a special tree and store its intermediate nodes and
+	leaves. See Figure 6. Notice the statement "a full page
+	needs to be cryptographically processed every time a local
+	counter rolls over". Don't worry about the details of
+	this method. Just notice the similarity to our discussion of
+	the solution presented in Figure 3(b).
+
+</p><p>
+	What do we need to do if the OS cannot be trusted? Build
+	an integrity tree which covers only pages belonging to the
+	application and which can only be updated when the application
+	itself is running. Page table maps a page's virtual address
+	to its physical address. Branch splicing attack corrupts
+	the physical address corresponding to the virtual address
+	of a given memory block, see Figure 7. Therefore, we need
+	to build a tree over the virtual address space. The virtual
+	address generated by the protected application is used to
+	traverse the tree. What are the shortcomings? Not scalable:
+	need a large memory capacity (allocation of physical page
+	frames for the 2^64 bytes of leaf nodes that are defined
+	during initialization, as well as allocation of memory for
+	the non-leaf tree nodes) and a large initialization overhead
+	(takes too much time to initialize such a tree). We also
+	require one full-blown tree for each application requiring
+	protection, rather than a single tree protecting all software
+	in physical memory. How can we try to partially overcome
+	these problems? Introduce a new hardware unit that builds an
+	integrity tree over a reduced address space, which contains
+	only those pages needed for the application's execution
+	(it grows dynamically as the application memory footprint
+	increases).
+
+</p><p>
+	Memory authentication without a tree structure: Lhash is
+	designed for applications requiring integrity checking after
+	a sequence of memory operations (as opposed to checking every
+	memory operation as in tree schemes). It uses a multiset
+	hash function to maintain at runtime a write and read log of
+	memory locations, called WriteHash and ReadHash. These logs are
+	stored on-chip. At initialization WriteHash is computed over
+	the memory chunks belonging to the memory region that needs
+	to be authenticated. WriteHash is updated at runtime when an
+	off-chip write is performed or when a dirty cache block is
+	evicted from cache. WriteHash reflects the off-chip memory
+	state at any time. ReadHash is updated whenever an off-chip
+	read is performed or a chunk is brought in cache. To check
+	the integrity of a sequence of operations, all the blocks
+	belonging to the memory region that are not present in cache
+	are read, after which the ReadHash should equal the WriteHash.
+
+</p><p>
+	Requirements of multiset hash functions: compression
+	(guarantees that we can store hashes in a small bounded amount
+	of memory), comparability (a probabilistic algorithm that
+	compares hashes, needed since a multiset not always hashes to
+	the same value), incrementality (adding hashes of multisets
+	together results in a hash of the union of the multisets),
+	and multiset collision resistance (computationally infeasible
+	to find two distinct multisets that hash to comparable hashes).
+
+</p><p>
+<b>Related topics:</b>
+
+</p><p>
+	Related topics: Data authentication symmetric multi-processors:
+	need to consider bus transaction authentication on cache
+	to cache transfers required in cache coherency protocols,
+	see Figure 8.
+
+</p><p>
+	Related topics: How can we use an untrusted server to provide
+	trusted storage for a large number of directories, where the
+	files in each directory may be accessed and updated by several
+	different devices that may be offline at different times and
+	may not be able to communicate with each other except through
+	an untrusted server (over an untrusted network). The multi-user
+	network file system SUNDR offers protection against forking
+	attacks, a form of attack where a server uses a replay attack
+	to give different users a different view of the current state
+	of the system. However, it does not <i>immediately</i> detect
+	forking attacks. Instead, it offers <i>fork consistency</i>,
+	which essentially ensures that the system server either behaves
+	correctly, or that its failure or malicious behavior will be
+	detected at a later moment when users are able to communicate
+	with each other (for example, once a day during night time).
+	If the untrusted server has a time-stamping device that can
+	be trusted (for example, by using an embedded Trusted Platform
+	Module), then immediate detection of forking and replay attacks
+	is possible.
+
+</p><p>
+	Related topics: Cloud storage. A client wants to make sure
+	that a replica of their data exists. A proof of retrievability
+	(POF) is a short message generated by a server that contains
+	evidence that a correct version of the client's data is
+	stored at the server. This gives the possibility for clients
+	to efficiently check that their data is sufficiently backed up
+	(check out the latest news on the loss of T-mobile data!).
+
+</p><p>
+	Related topics: Sparse memory. By using an authenticated search
+	tree, a proof of non-existence of a leaf that corresponds to
+	an encrypted address can be generated. This protects against
+	denial of existence of stored values (required for sparse
+	memory), replay attacks, and unauthorized access.
+
+
+</p></body></html>

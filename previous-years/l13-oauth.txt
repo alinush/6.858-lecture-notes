@@ -1,0 +1,255 @@
+OAuth
+=====
+
+Administrivia.
+  Quiz.
+    Will post solutions, grades, grade distribution after lecture.
+    Pick up quiz from TAs.
+    Tricky questions -> low average grades; check the histogram.
+  Lab 5 posted: browser-based attacks in Javascript, etc.
+  Final project.
+    Your choice of topic.
+    Should be security-related, but more important to find interesting project.
+    Groups of 3-4 students.
+    Some idea suggestions posted on the web site.
+    Due: post your final project idea on Piazza by Monday.
+    Due: project proposal on Monday after that.
+
+This lecture: single sign-on (SSO) for web applications.
+  The paper is exploring common bugs in OAuth implementations.
+  Recent paper: presented last week at ACM CCS 2012.
+  Somewhat overplays importance of bugs or relevance of bugs to OAuth.
+    "Root cause" of several reported problems has little to do with OAuth.
+    Perhaps there's some tangential way in which OAuth could mitigate problems.
+    In some cases, the threat model and security goal is unclear.
+  Authors seem to lean heavily towards security at all costs.
+  Unclear what fundamental thing is being measured in eval (e.g., correlation).
+  MIT uses another SSO system, called Shibboleth.
+    Interesting final project: study security of MIT's IdP and RP equivalents.
+
+What does OAuth provide?
+  Two important aspects, unfortunately combined in OAuth.
+  Problem 1: what is the identity of the user?
+    Authentication.
+    Naive plan: user has an account on each site.
+    Not great: inconvenient, users can't remember too many distinct passwords.
+    SSO: trusted third party helps determine identity of user, like Kerberos.
+    Traditional meaning of single sign-on: no need to sign in for each server.
+  Problem 2: how to access user's resources on another site?
+    Authorization.
+    For example, Facebook allows other sites to access user data via its API.
+    How should users specify which sites can/cannot access their data?
+    Naive plan: user gives their Facebook password to site that needs access.
+    Insecure: site gets complete access to user's Facebook account.
+  OAuth's design mostly revolves around the second problem: authorization.
+    Protocol for accessing data is completely application-specific.
+    OAuth is just about getting the token used in the data access protocol.
+    OAuth includes (app-specific) way to specify needed resources/privileges.
+    Token should be good to access only the specified resources.
+  OAuth can also be used for authentication, in a slightly roundabout way.
+    One of the "resources" that most data access protocols support is user ID.
+    To figure out who user is, ask for access to user's identity.
+    Then, given the access token, fetch user's ID to authenticate the user.
+  OAuth requires servers to know about each other.
+    Need to agree on data access protocol, etc.
+    Annoying: each site must separately add support for Facebook, Google, etc.
+    Alternative protocol: OpenID, just authentication.
+    Authentication can be completely standardized.
+    A site can accept authentication from any other server that user chose.
+      (Just include OpenID server name in the username.)
+
+OAuth components.
+  User (human).
+  User's browser.
+  Relying party (RP): server that wants access to user's identity / data.
+  Identity provider (IdP): server that knows your identity / holds your data.
+
+  RP and IdP must learn about each other beforehand, exchange a secret value.
+  User must have an account with IdP beforehand.
+  But, user does not need to have used RP before -- this is SSO's job.
+
+Typical OAuth workflow ("server-flow").
+  Figure 1 in paper.
+
+  i: RP's identity as registered with IdP.
+     Why do we need this?  Must ask the user who they're giving privileges to.
+  p: Permissions requested by RP (e.g., read user's email, post on their wall).
+     Why do we need this?  To ask user / allow certain operations later.
+  r: Redirect URL for later step.
+     Why do we need this?  Partly for convenience.
+  a: Some additional state for when login completes.
+     Why do we need this?  Help redirect URL match up login attempt & reply.
+
+  What does IdP check for in (i, p, r)?
+    Permissions p are subset of ones that RP originally promised to ask for.
+    Redirect URL r matches the URL pattern supplied by RP.
+
+  User might already be logged in to IdP: use cookies to bypass login screen.
+
+  User must decide whether to allow these specific permissions.
+
+  c: Authorization code meant for RP.
+  t: Token that gets used in app-specific data access protocol.
+    Token has an expiration time.
+    User can also revoke token through some IdP-specific interface.
+
+  Why separate 'c' and 't'?
+    Want to limit the damage in case 'c' is compromised.
+    IdP wants to ensure only the intended recipient gets the token.
+    OAuth requires RP's secret value, 's', to get the real token.
+
+  Why include 'r' when sending 'c' to IdP in order to obtain token 't'?
+    The party that's getting the token wants to know if the token was for it.
+    Suppose Alice logs into malicious server with OAuth.
+    That malicious server may replay its 'c' to another site that Alice uses.
+    'r' helps RP and IdP check whether 'c' was issued for 'r' or not.
+    Prevents one site from replaying authorization code on different site.
+
+OAuth "client-flow".
+  Why?  Some applications might be server-less, purely in Javascript on client.
+  Figure 2 in the paper.
+  Difference: IdP sends token 't' directly to RP, instead of code 'c'.
+  Why?  RP has no way to keep a secret value if it's running in the browser.
+  How to ensure token is only sent to the appropriate RP?
+    Redirect token to RP's URL.
+    Include token in URL's hash fragment (http://www.rp.com/foo#token).
+    Does not get sent over the network, but can be accessed from Javascript.
+  How does RP's web page talk to IdP's server?
+    Same-origin policy usually prohibits cross-origin communication.
+    Some recent browsers: can use CORS to allow cross-origin requests.
+    Older browsers: spawn an <iframe> containing IdP's code.
+      IdP's code in iframe will talk to IdP's server and relay message to RP.
+      Typically messages relayed via postMessage().
+    In either case, use SSL to talk to IdP.
+
+What does it mean to prove OAuth secure?
+  OAuth specification does a great job laying out assumptions and pitfalls.
+    "OAuth Threat Model".  [ See references at the bottom ]
+  Person doing the proof models how each component behaves.
+  Assumes IdP and RP follow the requirements laid out by OAuth.
+  Assumes IdP and RP are bug-free.
+  This paper shows that violating requirements / having bugs leads to problems.
+    E.g., OAuth assumes pervasive use of SSL, but many sites ignore this.
+    Not particularly surprising, but potentially a good way to explore OAuth.
+
+Why don't sites universally use SSL?
+  Performance: network round-trips, crypto overhead (low), caching policy.
+  Management: need to deal with certificates, proxies / load balancing harder.
+  Is it useful to protect just the login page with SSL?
+    Some limited use: protects credentials processed by that page.
+      But users could be misled by redirection to attacker's SSL page.
+    Any cookies used by non-SSL pages are still exposed over the network.
+    In OAuth, RPs often don't seem to realize sensitivity of tokens / creds.
+
+How is OAuth used in practice?
+  IdP (e.g., Facebook or Google) provide a "SDK" library for RPs to use.
+  Reasonable because OAuth requires tight integration between IdP + RP anyway.
+  Most RPs use the provided SDK, esp. for "client-flow", because need iframe.
+  Many RPs use client-flow despite having a server.  (Ease-of-deployment?)
+    RPs invoke the SDK in browser, and then send something to the server.
+    OAuth doesn't really say what should be sent to the server here.
+      Intended solution was server-flow.
+    RPs send various things: credential 'c', token 't', fetch username from IdP.
+
+Attack: tokens sent unencrypted over the network [A1].
+  Several SDKs (Facebook, Microsoft) stored token in cookie after client-flow.
+  Cookie wasn't set as "secure", so was visible on network in HTTP requests.
+  Facebook's fix: set cookie to the authorization code instead of token.
+    Better because obtaining token requires RP's secret value 's'.
+  After Facebook's fix, some RPs set 't' as cookie from the server!
+    Why?  Backwards compatibility?  Convenience?  Not security..
+  How to defend: use SSL, don't store sensitive information in cookie.
+
+Attack: token theft via XSS [A2].
+  If adversary can run JS code in RP, can steal client-flow token.
+  Not surprising.  But how to fix?
+    Avoid XSS: yes, but hard to do in practice for large site.
+    Restrict redirect URLs to a separate domain/origin.
+
+Attack: stealing whatever RP's client-side code sends to RP's server [A3].
+  Embarassing version: RP's JS fetches username, sends it to RP's server.
+    Adversary can just send an arbitrary username to RP's server.
+    Of course this would not allow RP to access IdP.
+    But logs adversary into that username's account on RP.
+  If RP's client-side code sends 't', then boils down to previous attacks.
+  Less clear version: stolen credential 'c' can be used by adversary.
+    How to prevent this?
+    Possibly bind credential 'c' to the user's browser.
+    How to identify user's browser?
+    Extra state 'a' could work, but OAuth's protocol does not bind 'c' to 'a'.
+    Could have special format for 'c' that's signed along with hash of 'a'?
+    But attack that stole 'c' might also steal 'a' much the same way.
+  How to defend against this?
+    Send credential 'c' or use server-flow.
+    Make credential 'c' usable only one time (at IdP).
+      But only helps if adversary doesn't get to use 'c' first.
+    Perhaps some form of credential binding to request?
+
+Attack: session swapping [A4].
+  Adversary could force victim to log into adversary's account at RP.
+  Why is this bad?  Victim might add sensitive information to this account.
+  How does the attack work?
+    Adversary forces victim to load redirection URL with adversary's 'c' value.
+  How to prevent?
+    Generate argument 'a' based on user's session ID.
+    Check that argument 'a' corresponds to user's session ID.
+    Adversary wouldn't know the right 'a' value to send to redirect URL.
+
+Attack: forced login [A5].
+  Adversary can force victim to log into a site that they've logged into before.
+  Is this really a problem?
+  Authors argue adversary can then exploit some bug in this RP site..
+
+Attack: RP registers an overly-permissive set of URLs with IdP.  [OAuthTM 4.1.5]
+  Suppose some RP registers *.rp.com with IdP as the allowed redirect URLs.
+  Problem: there may be some way to redirect one of those URLs to adversary.
+    Simple example: rp.com has a redirection service.
+    http://www.rp.com/redirect?url=http://foo.com redirects to http://foo.com.
+  Adversary can supply this URL as the redirect URL 'r'.
+  With server-flow, adversary can steal credentials of some user meant for RP.
+    What good is the credential, if you need server's secret 's' to get token?
+    Can then reuse same credentials to authenticate to same RP.
+  With client-flow, adversary can steal token directly.
+
+Attack: phishing for user's IdP credentials.  [OAuthTM 4.1.4]
+  If user is not logged in to IdP, then a login screen ask user for password.
+  How can user recognize whether the IdP login screen is authentic?
+  Need to check SSL indicators, but that turns out to be unintuitive.
+
+Which of these would be mitigated by using SSL everywhere?
+  A1: partially, because harder to steal (but cookie may still be non-"secure").
+  A2: no.
+  A3: some / partially, because harder to steal.
+  A4: no.
+  A5: no.
+  OAuthTM 4.1.5: no.
+  OAuthTM 4.1.4: no.
+
+What do you think of the trade-offs that OAuth makes?
+  No signatures.
+    Previous version of OAuth relied on signatures.
+    Cryptographically reasonable, but signatures were hard for RPs to implement.
+    OAuth 2.0 relies on SSL, but this turns out to be easy to get wrong too..
+  Client-flow vs. server-flow.
+    Perhaps should prevent client-flow for server-side applications?
+  Automatic authorization granting.
+    Is forced login really a problem?
+
+How to make things better on the IdP end?
+  Prohibit client-flow by default.
+  Whitelist redirect URLs, instead of patterns.
+  Single-use authorization codes.
+  Don't store token in a cookie.
+  Proof token instead of bearer token?  Would need server's secret to use token.
+
+How to make things better on the RP end?
+  Use separate domain for receiving credentials/tokens from IdP.
+  Protect received credentials/tokens with SSL.
+
+How might you design OAuth better?
+
+References.
+  http://tools.ietf.org/html/rfc6749
+  http://tools.ietf.org/html/draft-ietf-oauth-v2-threatmodel-08
+  http://www.doc.ic.ac.uk/~maffeis/csf12.pdf
+

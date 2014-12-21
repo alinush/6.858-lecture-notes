@@ -1,0 +1,177 @@
+Vanish
+======
+
+Problem: sensitive data can be difficult to get rid of.
+    Emails, shared documents, even files on a desktop computer.
+    Adversary may get old data after they break in, gain access.
+    Difficult to prevent certain kinds of "break ins": legal subpoenas, etc.
+    Would like to have data become inaccessible after some period of time.
+
+How serious of a problem is this?
+    Seems like there are some interesting use cases that the paper discusses.
+    Especially useful for ensuring email messages cannot be recovered later on.
+
+Strawman 1: why not attach metadata with expiration date (e.g., email header)?
+    Copies of data may be stored on servers: backups, logs (e.g., email).
+    Even with no copies, data may be stored on broken machine: hard to erase.
+    Adversary may be able to obtain sensitive data from those copies.
+    Goal: do not require any explicit data deletion.
+
+Strawman 2: why not encrypt email messages with recipient's public key?
+    Adversary may steal the user's private key.
+    Adversary may use a court order or subpoena to obtain private key.
+    Goal: ensure data is inaccessible even if recipient's key compromised.
+
+Strawman 3: why not use an online service specifically for this purpose?
+    Simple service, in principle:
+	Encrypt messages with a specified expiration time.
+	Decrypt only ciphertexts whose expiration time is in the future.
+    Service is trusted (if compromised, can recover old "expired" data).
+	Security services were targeted by law enforcement in the past.
+	E.g., Hushmail incident.
+    Hard to deploy service specifically for an unknown new application.
+	Difficult to justify resources for services that's not used yet.
+    Goal: no new services.
+
+Strawman 4: why not use specialized hardware?
+    Need a reliable source of time; TPM hardware does not provide one.
+    In principle, smartcard could serve as distributed encrypt/decrypt service.
+    If we can't use a standard TPM chip, difficult to deploy new hardware.
+    Goal: no new hardware.
+
+Vanish design, step 1: reduce problem to limiting lifetime of random keys.
+    To create a vanishing data object (VDO), create fresh data encryption key K.
+    Encrypt the real data with this key: C = E_K(D).
+    Strawman VDO is now (C, K).
+    Next, we will make sure key K vanishes at the right time..
+    Why is this step useful?
+    1. Need to worry about vanishing of a small, fixed-size object (key K).
+    2. The key K itself doesn't leak any information about data.
+
+Vanish design, step 2: store the secret key in a DHT.
+    Quick aside on how DHTs work..
+    Logical view:
+	Many machines (e.g., ~1M for Vuze DHT) talk to each other.
+	Store key-value pairs, where keys are 160-bit things called "indexes".
+	Storage is distributed across the nodes in the DHT.
+	(Thus, the name: distributed hash table.)
+    API:
+	lookup(index) -> set of nodes
+	store(node, index, value) -> node stores the (index, value) entry
+	get(node, index) -> value, if stored at that node
+    The tricky function is lookup (others are just talking to one node).
+	Vuze DHT works by constructing a single 160-bit address/name space.
+	160 bits works well, because it's large and fits a SHA-1 hash.
+	Nodes get 160-bit identifiers (SHA-1 hash of, e.g., node's public key).
+	Nodes are responsible for indexes near their own 160-bit ID.
+	    That is, lookup(index) returns nodes with IDs near index.
+	Nodes talk to other nodes with nearby ID values, to replicate data.
+	    (Also need to talk to a few nodes far away, for lookup to work).
+    Intermediate step (not quite Vanish):
+	Choose random "access key" L.
+	Store data key K at index L in the DHT.
+	Strawman VDO is now (C, L).
+    How to recover the VDO before it expires?
+	Straightforward: fetch key K from index L in the DHT.
+    What causes data to vanish?
+	In the Vuze DHT, values expire after 8 hours (fixed timeout).
+	More generally, DHTs experience churn (nodes join and leave the DHT).
+	Once a node leaves DHT, it will re-join with a different ID.
+	Difficult to track down nodes that used to store some index in the past.
+    Why does Vanish choose an "access key" L instead of using, say, H(C)?
+	Ensures that Vanish does not reduce security.
+	The only things revealed to the DHT are random values (e.g., L and K).
+	Not dependent on actual sensitive data (plaintext D or ciphertext C).
+
+Vanish design, step 3: split up the key into multiple pieces, store the pieces.
+    Why does Vanish do this?
+    1. Individual nodes may go away prematurely, want reliability until timeout.
+    2. Individual nodes can be malicious, can be subpoenaed, can be buggy..
+    Problem shown in Figure 4 (with N=1).
+	Less than 100% availability before 8 hours.  Why?
+	More than 0% availability after 8 hours.  Why?
+
+Secret sharing (by Adi Shamir).
+    Given secret K, want to split it up into shares K_1, .., K_N.
+    Given some threshold M of shares (<= N), should be able to reconstruct K.
+    Construction: random polynomial of degree M-1, whose constant coeff is K.
+	Assume we can operate mod some large constant (e.g. 2^128 for AES keys).
+	Polynomial is f(x) = z_{M-1} x^{M-1} + .. + z_1 x^1 + K  (mod 2^128).
+    To generate N secret shares, compute f(1), f(2), .., f(N).
+    To reconstruct secret given M shares, solve polynomial and compute f(0).
+    With fewer than M shares, there is a unique solution for any f(0) value.
+	This means adversary doesn't know what f(0)=K is, with <M shares.
+
+Secret sharing in Vanish.
+    Choose two parameters (N and threshold) and split up K into K_1, .., K_N.
+    Generate N indexes (I_1, .., I_N) pseudo-randomly using L as the seed.
+    Store K_i at index I_i.
+    The VDO is now (C, L, N, threshold).
+    Recovery: re-generate I_i's from L, look up K_i shares, reconstruct K.
+    How to pick N and threshold?
+	Larger N: better resistance to adversary stealing shares.
+	Larger threshold: somewhat more difficult to compromise enough shares.
+	Smaller threshold: more reliable (i.e., can get enough shares).
+    How precisely can Vanish force expiration after T = 8 hours?
+	With Vuze, N=50 and 60-70% seems to work OK.
+	Churn is a big factor in availability (i.e., timeout before T).
+	Misconfigured nodes are big factor in security (i.e., timeout after T).
+
+Is Vanish useful?
+    Only works with online access, but doesn't require much bandwidth.
+    Can we prefetch shares?  Yes, but that would defeat the point of Vanish..
+    Applications:
+	1. FireVanish (plugin for Firefox/Gmail similar to GnuPG).
+	2. Vanishing file application (not described in much detail).
+    Is this usable?
+	Seems plausible -- builds on GnuPG plugin.
+	Application (e.g., Gmail) cannot access underlying plaintext data.
+	E.g., cannot search over VDO messages.
+    Performance?
+	What's the dominant cost?
+	For encapsulating VDO, dominant cost is storing key shares, O(N).
+	Can optimize by pre-creating keys periodically.
+	For decapsulating VDO, dominant cost is fetching key shares.
+	    Still expensive: 2 seconds for N=20, 19 seconds for N=200.
+	    Cannot optimize without prefetching and defeating the point.
+
+Vanish attack vectors: mostly all about getting enough key shares.
+    Of course, need access to the VDO to make shares useful.
+    If adversary gets access to VDO before expiration, game over.
+    (Might help to encrypt VDO: stalling on revealing key will expire VDO.)
+
+Who might mount an attack?
+    Legitimate recipients of VDO assumed to be trusted.
+    Email service provider might sniff on all VDOs.
+	Can preemptively fetch key shares for all VDOs (using L).
+	How to prevent?  Encrypt VDO with some encryption scheme.
+	Even if outer key is revealed later, it's too late to use L.
+    ISP can monitor DHT requests to intercept stores of key shares.
+	How to prevent?  Use Tor, maybe different exit node for each share.
+    Intermediate DHT nodes can watch lookup requests, save value just in case.
+	How to prevent?  Lookup nearby indexes instead of real index.
+    Some other party that has no other knowledge about traffic or VDO.
+	Need to blindly store all possible shares ahead of time.
+
+How difficult is it to store all possible keys in a DHT?
+    Tricky question.
+    Paper claim: expensive (~$860K/yr) because Vuze DHT is large (1M nodes).
+    To capture a sizable fraction of all DHT values, need ~100K nodes.
+	Vuze replicates all values to 20 nearby nodes, so no need for 1M.
+    Running DHT nodes seemed expensive: need CPU time, memory, bandwidth.
+
+Shortly afterwards, two groups of researchers found problems with this analysis.
+    Turns out it's much cheaper to store all values from a DHT.
+    Observation: Vuze is quite aggressive at replicating data (to avoid loss).
+    Once node joins, nearby nodes send copies of data near its ID (~3 minutes).
+	Need to join each node for 3 minutes out of every 8 hours!
+	~100x reduction in number of concurrent DHT nodes that adversary runs.
+    Moreover, adversary can implement DHT nodes in C instead of Java.
+	Much lower CPU, memory requirements.
+    Patch: change Vuze to not replicate Vanish data so aggressively.
+	Requires specialized changes to Vuze, something that's against goal?
+	Interesting follow-on work: Comet at OSDI2010.
+    Patch: split up secret among multiple DHTs (paper proposes Vuze + OpenDHT).
+	Use secret-sharing to break up key into 2 pieces, one for each DHT.
+	Then use secret-sharing again within each DHT.
+

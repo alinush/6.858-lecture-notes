@@ -1,0 +1,207 @@
+Browser Security (guest lecture by Ramesh Chandra)
+==================================================
+
+web app security
+    server and client -- we'll mostly focus on client
+
+web apps: past vs. present
+    past: mainly static content, simpler security model
+          user interactions resulted in round-trips to server
+    present: highly dynamic content with client-side code
+          advantages: responsiveness, better functionality
+          more complex security model
+          
+threat model / assumptions
+    attacker controls his/her own web site, attacker.com (sounds reasonable)
+    attacker's web site is loaded in your browser (why is this reasonable?)
+    attacker cannot intercept/inject packets into the network
+    browser/server doesn't have buffer overflows
+    
+security policy / goals
+    1: isolation of code from different sites
+        javascript code runs in your browser, has access to lots of things
+        need to have some way of isolating code from different sites
+        attacker should not be able to get your bank balance, xfer money, ..
+
+    2: UI security -- user needs to know what site they're talking to
+        phishing attacks are usually the biggest problem in this space
+        without isolation of code from diff. sites, UI security is hopeless
+        how do you know you're interacting with your bank vs. an attacker?
+        (if security can avoid depending on this question, all the better!)
+
+    we'll largely focus on the first (isolation of code) for now
+          
+how does javascript fit into the web model?
+    HTML elements
+    script tags; inline and src=
+    built-in objects like window, document, etc
+    DOM
+    HTML elements can invoke JS code: onClick, onLoad, ..
+    single-threaded execution; event-driven programming style for network IO
+    frames for composing/structuring
+
+browser security model
+    principal: domain of the web content's URL
+        http://a.com/b.html and http://a.com/c.html are the same principal
+        
+    protected resource: frame
+        principal is the domain of frame's location URL
+        all code in the frame runs as that principal
+        doesn't matter where the code came from (e.g. script src=...)
+        analogous to a process in Unix
+        
+    protection mechanisms:
+        javascript references as capabilities
+            may not be able to get references to other windows/frames
+            but there are many objects with global names
+        access control: same origin policy
+    privileged functions implement their own protection
+        e.g. postMessage, XMLHttpRequest, window.open()
+    
+    same-origin policy (SOP)
+    intuition/goal: only code from origin X can manipulate resources from X
+        frame A can poke at frame B's content only if they have the same principal
+            why does the browser allow any cross-frame access at all?
+                frames used for layout in addition to protection
+    unfortunately, quite vague, and overly restrictive; shows in practice
+        exceptions to get around restrictions:
+            script, image, css src tags: why are these needed?
+            frame navigation
+
+
+frame navigation
+    problem: navigating a frame is a special operation not governed by SOP
+    subject to other access control rules, which this paper talks about
+    why does the browser allow this in the first place?
+        might have navigation links in one frame, other sites in another
+
+    what goes wrong if attacker.com can navigate another frame?
+    can substitute a phishing page for the login frame of another site (eg. bank)
+    why doesn't the SSL icon "go away"?  rule: all pages came via SSL
+    reasoning: original site included the other origin explicitly?
+    how does the attacker get a handle on that sub-frame?
+        global name space of frame/window names
+            more difficult in current browser -- firefox has per-frame name space
+            of frame names
+
+what's their proposed fix?
+    window policy: can only navigate frames in the same window
+    can still mount the attack on another site if you open it within a window
+    why is this still OK?  no correct answer; mostly because of the URL bar
+
+mash-ups
+    idea: combine data from multiple sites/origins
+    eg: iGoogle combines frames from many developers in the same page
+    terminology: the whole site is a "mashup"
+    iGoogle is an "integrator"
+    all the little boxes that are included in the page are "gadgets"
+    what are the problems that we run into?
+    one site's code in one frame can navigate another site's frame
+    window policy is of no help
+    why does it matter? UI for login, again
+
+better policy: descendant/child policy
+    why do they argue the descendant policy is just as good as child?
+    in theory, parent can cover up any descendant with a floating object
+    when is child a better choice?
+    later examples where site wants to know it's talking to the right child
+    i.e. cases when the worry isn't the UI issues
+    origin propagation:
+    what's the reasoning for this?
+    would this occur in real sites?  frames used for side-by-side structure
+
+cross-origin frame communication
+    when would you need it?  mashups where origins interact
+    why do origins need to interact on the client? can we push interactions to
+    server-side?
+        cleaner design => easier to implement
+        avoid extra round trips => more responsive app
+        better integration => better user experience
+    nice example: yelp wants to use google maps
+    mutually distrustful (in theory, at least)
+    alternative 1: map in another frame (open it to some location), no feedback
+    alternative 2: map in the same frame (script src=), no protection
+        yelp does this today
+    alternative 3: map in one frame, yelp in another frame, communication btwn
+
+    threat model: in addition to threat model described above, we assume:
+        attacker's gadget can load honest gadget in a subframe
+        attacker's gadget can communicate with integrator and honest gadget
+
+    goal: secure, reliable communication between origins
+
+    how does frame communication work?
+    plan 1: exploiting a covert channel!  (fragment channel)
+        problem: no authentication (where did a message come from?)
+        workaround: treat as a network, run authentication protocol
+        all 3 impls these guys looked at had the same bug
+
+        protocol: nonces, include sender's ID (rcpt doesn't know sender)
+	idea: each side generates a nonce, gives it to the other side
+	if someone gives you a message w/ nonce, it came from other side
+
+        what's the possible attack?
+	attacker can impersonate integrator when talking to gadget
+
+        why does it matter?  gadget might have policies for diff. sites
+	OK to add your contacts list gadget into facebook, access it
+	not OK to access your contact list gadget by other sites
+
+        how does the attack work?
+	relay initial message to the gadget
+	gadget replies back to the integrator
+	integrator sends gadget's nonce to attacker,
+	    to prove it's the integrator sending the msg
+	now the attacker has both nonces, can impersonate in both dir'n
+	might not be able to intercept msgs from gadget, though
+	    they're sent directly to integrator's URI
+        fix is well-known: include URI (name) in second response too
+
+    plan 2: browser developers designed a special mechanism for it
+        frame.postMessage("hello")
+        paper claims this provides authentication but not privacy; how come?
+	frame can re-navigate without sender's knowledge
+        how can this happen?
+	sender was itself in a sub-frame of attacker's site
+	descendant policy allows attacker to access all sub*-frames
+        why didn't the fragment channel have this problem?
+	tight binding between message and recipient (url#msg)
+        solution: make the binding explicit
+
+protected resource: cookie
+    how does HTTP authentication work?
+    browser keeps track of a session "cookie" -- arbitrary blob from server
+    sends the cookie along with every request to that server
+    cookie often includes username and authentication proof
+    inside browser, same-origin policy protects cookies like frames
+    cookie stored in document.cookie
+    can only access cookies for your own origin
+
+    possible attack: generate requests to xfer money from attacker.com
+    <img src="http://bank.com/xfer?amt=1000&rcpt=XYZ">
+
+    solution: spaghetti-rules
+    hard to prevent GET requests, so allow those (e.g. img tags)
+    protect from malicious ops: include some non-cookie token in the request
+    protect bank account balance: only see responses from the same origin
+    except that's not quite true either
+        script src= tags run code
+        style src= tags load CSS style-sheets, also visible
+    so, to protect sensitive data, make sure it doesn't parse as JS or CSS?
+
+another mechanism to secure mashups: safe subset of javascript
+    eg: FBJS, ADSafe, Caja
+    Facebook javascript (FBJS): compiles gadget down to a safe subset of JS
+        per gadget name space
+        accesses to global name space through secure wrappers
+        intercepts all events and proxies AJAX requests thru FB
+        gadget is embedded into FB and needs to trust FB
+  
+takeaways
+    web security lacks unifying set of principles
+        policies such as SOP have many exceptions
+        different browsers / runtimes (e.g. Flash) implement different policies
+        confusing to web developers
+    supporting existing web sites makes deploying fundamental fixes difficult
+    lesson: think about security early on in the design
+

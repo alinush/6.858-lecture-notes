@@ -1,0 +1,518 @@
+<h1>TCP/IP security</h1>
+
+<h2>Threat model for network security</h2>
+
+<ul>
+<li>Adversary can intercept / modify network traffic.</li>
+<li>Adversary can send packets.</li>
+<li>Adversary has full control of their own machines.</li>
+<li>Adversary can participate in protocols (usually).
+<ul>
+<li>Often not feasible to keep bad guys out of a large systems.</li>
+</ul></li>
+</ul>
+
+<p>Eavesdropping on packets.</p>
+
+<ul>
+<li>Important to keep in mind, but relatively well understood.</li>
+<li>Any data sent over the network can be observed by an adversary.</li>
+</ul>
+
+<p>Sending / spoofing packets.</p>
+
+<ul>
+<li>IP allows sender to construct an arbitrary packet.</li>
+<li>In particular, sender can fill in any source address.</li>
+<li>Can pretend that a packet is coming from any address.</li>
+<li>What can an adversary do with this?</li>
+</ul>
+
+<h2>A Look Back at "Security Problems in the TCP/IP Protocol Suite"</h2>
+
+<p><a href="http://css.csail.mit.edu/6.858/2014/readings/lookback-tcpip.pdf">Paper here</a></p>
+
+<ul>
+<li>Easy target: trigger bugs in some implementation.</li>
+<li>Author isn't so interested in this class of problems.</li>
+<li>Instead, want to look at <strong>"protocol-level problems"</strong>.</li>
+<li>What is a protocol-level problem?
+<ul>
+<li>A problem inherent in the design.</li>
+<li>A correct implementation will have this problem.</li>
+</ul></li>
+<li>Why is it so important?
+<ul>
+<li>Can fix implementation bugs.</li>
+<li>To fix protocol-level bugs, might need to change protocol!
+<ul>
+<li>Might be incompatible with existing systems.</li>
+<li>(As we will see, sometimes possible to come up with compatible fixes.)</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h2>TCP sequence number attack</h2>
+
+<ul>
+<li>Standard handshake (figure on the right side of page 2):
+<ul>
+<li><code>C: SRC=C, DST=S, SYN(SNc)</code></li>
+<li><code>S: SRC=S, DST=C, SYN(SNs), ACK(SNc)</code></li>
+<li><code>C: SRC=C, DST=S, ACK(SNs)</code></li>
+<li><code>C: SRC=C, DST=S, data(SNc), ACK(SNs)</code></li>
+</ul></li>
+<li>How does the adversary know the data is coming from the client?
+<ul>
+<li>Only the client should have been able to receive the second message.</li>
+<li>Thus, <strong>only the client should know SNs</strong>.</li>
+<li>Third message is rejected, unless it has the right SNs value.</li>
+</ul></li>
+<li>Suppose adversary A wants to simulate a connection to S from C.
+(Assume A knows C's IP address -- usually not a big deal in practice.)
+<ul>
+<li><code>A: SRC=C, DST=S, SYN(SNc)</code></li>
+<li><code>S: SRC=S, DST=C, SYN(SNs), ACK(SNc)</code> -- but this goes to C, not A</li>
+<li><code>A: SRC=C, DST=S, ACK(SNs)</code>   -- but how to guess SNs?</li>
+<li><code>A: SRC=C, DST=S, data(SNc)</code></li>
+</ul></li>
+<li>Where does the adversary get SNs?
+<ul>
+<li>TCP specification suggested a specific way to choose them.</li>
+<li>In particular, increment at a ~constant rate: ~250,000 per second.</li>
+<li>Why so specific?
+<ul>
+<li>Subtle interactions with reused connections (src/dst port numbers).</li>
+<li>Want to avoid old packets (from past conns) interfering with new conn.</li>
+<li>Ref: RFC 1185 appendix</li>
+</ul></li>
+<li>If adversary knows a recent sequence number, can guess the next one.
+<ul>
+<li>Implemention would actually bump ISN every second, making it easy to guess.</li>
+</ul></li>
+</ul></li>
+<li>What happens to the real packet that S sends to C (second pkt)?
+<ul>
+<li>C would assume the packet is from an old conn, send <code>RST</code> in response.</li>
+<li>Even if that <code>RST</code> was sent, adversary could try to race before <code>RST</code> arrives.</li>
+<li>Luckily, there was another curious bug; will get to it later.</li>
+</ul></li>
+<li>But why do sequence number attacks turn into a security problem?</li>
+</ul>
+
+<h3>1. Spoof connections to applications that rely on IP addresses</h3>
+
+<ul>
+<li>E.g., Berkeley remote access tools: rlogin, rsh, rcp.</li>
+<li>Allowed login without a password, if connection came from a "trusted" system.
+<ul>
+<li>Required connection to come from a trusted source port (512-1023).
+<ul>
+<li>Why this requirement?</li>
+</ul></li>
+<li>Trusted rlogin/rsh/rcp program sent the client's username.</li>
+<li>If username was the same as the account on the server, no password needed.</li>
+<li>E.g.: "rsh athena.dialup.mit.edu ls".</li>
+</ul></li>
+<li>Made a bad assumption about what the TCP layer provided.
+<ul>
+<li><em>Assumed TCP conn from an IP address meant it really came from that host.</em></li>
+</ul></li>
+<li>If adversary can guess SNs, then can simulate connection from trusted host.
+<ul>
+<li>Issue any command using rsh.</li>
+<li>Could change the user's .rhosts file to allow login from attacker's host.</li>
+<li>Then connect directly without having to simulate a connection.</li>
+</ul></li>
+<li>Host-based authentication seems like a bad plan.
+<ul>
+<li>Especially relying on "trusted" vs "untrusted" ports on a machine.</li>
+<li>Still in some use today: e.g., SMTP for outgoing mail.</li>
+</ul></li>
+<li>Actually rlogin authentication was even worse: they authenticated by hostname.
+<ul>
+<li>Where does hostname come from?  Reverse DNS lookup.</li>
+<li>E.g., 18.26.4.9: find the PTR record of 9.4.26.18.in-addr.arpa.</li>
+<li>Owner of that domain can set PTR record to any hostname!
+<ul>
+<li>(Can make a slight improvement: check if host resolves to same addr.)</li>
+</ul></li>
+<li>Similar problems show up in log files: log resolved (untrusted) hostname.</li>
+</ul></li>
+</ul>
+
+<h3>2. Denial of service attack: connection reset</h3>
+
+<ul>
+<li>Once we know SNc, can send a RST packet.</li>
+<li>Worse yet: server will accept a RST packet for any SNc value within window.</li>
+<li>With a large window (~32K=2^15), only need 2^32/2^15 = 2^17 guesses.</li>
+</ul>
+
+<p>How bad is a connection reset?</p>
+
+<ul>
+<li>One target of such attacks were the TCP connections between BGP routers.</li>
+<li>Causes routers to assume link failure, could affect traffic for minutes.</li>
+<li>Solutions:
+<ul>
+<li>TTL hack (255): make sure BGP nodes only talk to direct neighbors by setting
+<code>TTL = 1</code> in the TCP packets</li>
+<li>MD5 header authentication (very specialized for router-to-router links).</li>
+</ul></li>
+</ul>
+
+<h3>3. Hijack existing connections</h3>
+
+<ul>
+<li>In similar vein, can also inject data into an existing connection.</li>
+<li>All adversary needs to know is the current SNc.</li>
+</ul>
+
+<p>How to mitigate this problem?</p>
+
+<ul>
+<li>Baseline: don't rely on IP addresses for authentication.
+<ul>
+<li>Use encryption / authentication at a higher level.</li>
+<li>Next lecture: Kerberos.</li>
+<li>But still, want to fix the situation we're in, for TCP.</li>
+</ul></li>
+<li>ISPs can filter packets sent by their customers.
+<ul>
+<li>Often done today for small customers, but not consistently.</li>
+<li>Not straightforward for customers with complex networks, multihoming, ..</li>
+</ul></li>
+</ul>
+
+<p>How to patch up TCP?</p>
+
+<ul>
+<li>Can't choose ISN's in a completely random way, without violating TCP spec.
+<ul>
+<li>Might break connection (port) reuse guarantees.</li>
+<li>ISN is 32 bits, means after ~2^16 = 65,000 connections you could get a
+collision and reuse an ISN that matches an old connection.
+<ul>
+<li>old packets from that connection can be interpreted as being part of the
+new connection</li>
+</ul></li>
+<li>Thus, it might be better if the ISNs <em>progress</em> incrementally with
+wrap-around, so as to make collisions much less probable.</li>
+</ul></li>
+<li>Random increments?
+<ul>
+<li>Should preserve increment rate (~250k/second).</li>
+<li>Not a huge amount of randomness (say, low 8 bits per increment).</li>
+</ul></li>
+<li>Aside: must be careful about how we generate random numbers!
+<ul>
+<li>Common PRNG: linear congruential generator: <code>R_k = A*R_{k-1}+B mod N</code>.</li>
+<li>Not secure: given one pseudo-random value, can guess the next one!</li>
+<li>Lots of better cryptographically secure PRNGs are available.
+<ul>
+<li>Ideally, use your kernel's built-in PRNG (/dev/random, /dev/urandom)</li>
+<li>Ref: http://en.wikipedia.org/wiki/Fortuna_(PRNG), or any stream cipher
+like http://en.wikipedia.org/wiki/RC4</li>
+</ul></li>
+</ul></li>
+<li>However, SN values for different src/dst pairs never interact!</li>
+<li>So, can choose the ISN using a random offset for each src/dst pair.
+<ul>
+<li>Nice trick: <code>ISN = ISN_oldstyle + F(srcip, srcport, dstip, dstport, secret)</code></li>
+<li><code>F</code> is some pseudo-random function; roughly, think SHA1.</li>
+<li>Requires no extra state to keep track of per-connection ISNs.</li>
+</ul></li>
+</ul>
+
+<p>Are sequence number attacks still relevant?</p>
+
+<ul>
+<li>Most operating systems implement the per-connection ISN workaround above.
+<ul>
+<li>Ref: Linux <code>secure_tcp_sequence_number</code> in <code>net/core/secure_seq.c</code></li>
+</ul></li>
+<li>But other protocols suffer from almost identical problems -- e.g., DNS.
+<ul>
+<li>DNS runs over UDP, no seq numbers, just ports, and dst port fixed (53).</li>
+<li>If adversary knows client is making a query, can fake a response.
+<ul>
+<li>Just need to guess src port, often predictable.</li>
+</ul></li>
+<li>Problem gained popularity in 2008, though well-understood by djb before.
+<ul>
+<li>Ref: http://cr.yp.to/djbdns/forgery.html</li>
+<li>Ref: http://unixwiz.net/techtips/iguide-kaminsky-dns-vuln.html</li>
+</ul></li>
+<li>Solution: carefully take advantage of all possible randomness!
+<ul>
+<li>DNS queries contain 16-bit query ID, and can randomize ~16 bit src port.</li>
+</ul></li>
+<li>Solution: deploy DNSSEC (signed DNS records, including missing records).
+<ul>
+<li>One problem: key distribution (who is allowed to sign each domain?)</li>
+<li>Another problem: name enumeration (to sign "no such name" responses).</li>
+<li>Partially mitigated by NSEC3: http://tools.ietf.org/html/rfc5155</li>
+<li>Slow adoption, not much incentive to upgrade, non-trivial costs.</li>
+<li>Costs include both performance and administrative (key/cert management).</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h2>SYN flooding</h2>
+
+<ul>
+<li>Note that server must store some state when it receives a SYN packet.
+<ul>
+<li>It needs to store the <code>SN_s</code> sequence number it sent to that client</li>
+<li>Called a half-open connection: replied with SYN-ACK, waiting for the ACK.</li>
+</ul></li>
+<li>What if it receives SYN messages from many sources?
+<ul>
+<li>Many implementations try to keep state for all half-open connections.</li>
+<li>But eventually run out of memory, must reject connections!</li>
+</ul></li>
+<li>Annoying problem: we don't even know who we're keeping state for!
+<ul>
+<li>Adversary could have a single host, and generate SYNs from many src IPs.</li>
+</ul></li>
+<li>Denial-of-service attack: big asymmetry between client + server resources.
+<ul>
+<li>Client spoofs a single packet (less than 1 millisecond).</li>
+<li>Server wastes memory until connection times out (minutes).</li>
+</ul></li>
+</ul>
+
+<p>Defense for SYN flooding: SYN cookies.</p>
+
+<ul>
+<li><strong>Idea:</strong> make the server stateless, until it receives that third packet (ACK).</li>
+<li>Why is this tricky?
+<ul>
+<li>Need to ensure an adversary can't make up a conn from any src address.</li>
+<li>Previously, this was done by storing ISNs, and expecting it in the ACK.</li>
+</ul></li>
+<li>Use a bit of cryptography to achieve similar goal.</li>
+<li>Encode server-side state into sequence number.
+<ul>
+<li>ISNs = <code>MAC_k(src/dst addr+port, timestamp) || timestamp</code></li>
+<li>Timestamp is coarse-grained (e.g., minutes).</li>
+<li>Server stores secret key <code>k</code>, not shared with anyone else.
+<ul>
+<li>Detailed ref: http://cr.yp.to/syncookies.html</li>
+</ul></li>
+</ul></li>
+<li>Server computes seq as above when sending SYN-ACK response.</li>
+<li>Server can verify state is intact by verifying hash (MAC) on ACK's seq.
+<ul>
+<li>Not quite ideal: need to think about replay attacks within timestamp.</li>
+</ul></li>
+<li>Another problem: if third packet lost, noone retransmits.
+<ul>
+<li>Only a problem for protocols where server speaks first.</li>
+<li>Because server does <strong>NOT</strong> keep the connection state anymore, so it does
+not know there's a <em>hanging connection</em>, so it will never retransmit its
+SYN message to the client after waiting too long for the client's ACK.</li>
+<li>Similarly, the client will not know its ACK packet got lost (it's never ACK'd
+back, and since the client is waiting on the server to send 
+the first message (assumption), the client will not send any other data either.</li>
+<li>Maybe not a big deal in case of a DoS attack.</li>
+</ul></li>
+</ul>
+
+<p>Another DoS attack vector: bandwidth amplification.</p>
+
+<ul>
+<li>Send ICMP echo request (ping) packets to the broadcast address of a network.
+<ul>
+<li>E.g., 18.26.7.255.</li>
+<li>Used to be that you'd get an ICMP echo reply from all machines on network.</li>
+<li>What if you fake a packet from victim's address?  Victim gets all replies.</li>
+<li>Find a subnet with 100 machines on a fast network: 100x amplification!
+<ul>
+<li>Ref: http://en.wikipedia.org/wiki/Smurf_attack</li>
+</ul></li>
+</ul></li>
+<li>Can we fix this?
+<ul>
+<li>Routers now block "directed broadcast" (packets sent to broadcast address).</li>
+</ul></li>
+<li>Modern-day variant: DNS amplification.
+<ul>
+<li>DNS is also a request-response service.</li>
+<li>With a small query, server might send back a large response.</li>
+<li>With DNSSEC, responses contain lots of signatures, so they're even larger!</li>
+<li>Since DNS runs over UDP, source address is completely unverified.
+<ul>
+<li>Ref: http://blog.cloudflare.com/deep-inside-a-dns-amplification-ddos-attack</li>
+</ul></li>
+</ul></li>
+<li>Can we fix the DNS attack?
+<ul>
+<li>Actually quite hard! Root name servers must answer to queries from anyone.</li>
+</ul></li>
+<li>What if we had a chance to re-design DNS from scratch?
+<ul>
+<li>One possible plan: query must be as big as response (require padding).</li>
+<li>General technique: force client to expend at least as much work.</li>
+</ul></li>
+</ul>
+
+<p>TCP congestion control.</p>
+
+<ul>
+<li>Receiver can get the sender to speed up, by ACKing unreceived segments.</li>
+<li>Or send more ACKs (e.g., send ACK for each byte instead of every packet).</li>
+</ul>
+
+<p>Routing protocols: overly-trusting of participants.</p>
+
+<ul>
+<li>ARP: within a single Ethernet network.
+<ul>
+<li>To send IP packet, need the Ethernet MAC address of router / next hop.</li>
+<li>Address Resolution Protocol (ARP): broadcast a request for target's MAC.</li>
+<li>Anyone can listen to broadcast, send a reply; no authentication.</li>
+<li>Adversary can impersonate router, intercept packets, even on switched net.</li>
+<li>Potential solution: make the switch in charge of ARP.
+<ul>
+<li>Not widely deployed: would require managing MAC/IP addresses carefully.</li>
+</ul></li>
+</ul></li>
+<li>DHCP: again, within a single Ethernet network.
+<ul>
+<li>Client asks for IP address by sending a broadcast request.</li>
+<li>Server responds, no authentication (some specs exist but not widely used).
+<ul>
+<li>If you just plugged into a network, might not know what to expect.</li>
+</ul></li>
+<li>Lots of fields: IP address, router address, DNS server, DNS domain list, ..</li>
+<li>Adversary can impersonate DHCP server to new clients on the network.
+<ul>
+<li>Can choose their DNS servers, DNS domains, router, etc.</li>
+</ul></li>
+<li>Also, DoS attack on server: ask for lots of leases, from many MAC addrs.</li>
+<li>Solution: make the switch in charge of DHCP (forward reqs to real server).
+<ul>
+<li>Not widely deployed: would require careful switch configuration.</li>
+<li>Even more complicated on a wireless network.</li>
+</ul></li>
+</ul></li>
+<li>BGP: Internet-wide (similar to RIP attacks described in paper).
+<ul>
+<li>Any BGP participant router can announce route to a prefix.</li>
+<li>What if adversary has a router? Can announce any prefix or route.</li>
+<li>Is this problem still relevant?
+<ul>
+<li>Spammers often exploit this: announce an unused address, and send spam.</li>
+<li>Gets around IP-level blacklisting of spam senders: choose almost any IP!</li>
+</ul></li>
+<li>How to fix?
+<ul>
+<li>SBGP: cryptographic signing of route announcements.</li>
+<li>Must know who is allowed to announce every particular IP prefix.</li>
+<li>Requires someone to distribute keys / certificates for every IP prefix.</li>
+<li>Bootstrapping problem is tricky; some performance overheads too.</li>
+<li>Getting some traction but still not widely deployed.</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p>Many other problems too.</p>
+
+<ul>
+<li>ICMP messages like redirect: no authentication, basically unused now.</li>
+<li>Exposing too much information (netstat, SNMP, finger): mostly fixed.
+identd ("Authentication Service"): bad design, no real authentication.</li>
+<li>Email: real problem but no practical solutions yet.
+<ul>
+<li>Authentication vs authorization.</li>
+<li>E.g., PGP would not solve the spam problem.</li>
+</ul></li>
+<li>Passwords in protocols: supporting ONLY passwords isn't so great.
+<ul>
+<li>We'll talk about alternatives in a few weeks.</li>
+</ul></li>
+<li>FTP data transfer protocol.
+<ul>
+<li>Server connects back to client to send a file to the client.</li>
+<li>Client tells the server what IP address and port number to use.</li>
+<li>Could be used for port-scanning from server's IP.</li>
+<li>Could be used to send any traffic (embedded in file) from server's IP.
+<ul>
+<li>E.g., back to IP authentication problems: rlogin, spam, etc.</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p>How do adversaries know what software / protocol you are running?</p>
+
+<ul>
+<li>Probing:
+<ul>
+<li>Check if a system is listening on a well-known port.</li>
+<li>Protocols / systems often send an initial banner message.</li>
+<li>nmap can guess OS by measuring various impl-specific details.
+<ul>
+<li>Ref: http://nmap.org/book/man-os-detection.html</li>
+</ul></li>
+</ul></li>
+<li>Use DNS to look up the hostname for an IP address; may give hints.</li>
+<li>Guessing: assume system is vulnerable, try to exploit bug.</li>
+</ul>
+
+<p>How do adversaries know the IP address of the system to attack?</p>
+
+<ul>
+<li>traceroute to find routers along the way, for BGP attacks.</li>
+<li>Can also just scan the entire Internet: only 2^32 addresses.
+<ul>
+<li>1 Gbps (100 MB/s) network link, 64 byte minimum packets.</li>
+<li>~1.5M packets per second.</li>
+<li><code>2^32 = 4 Billion</code> packets in ~2500 seconds, or 45 minutes.</li>
+<li><a href="https://zmap.io/">zmap</a>: implementation of this </li>
+</ul></li>
+</ul>
+
+<p>Why are things so insecure at the TCP/IP level?</p>
+
+<ul>
+<li>Historically, designers did not worry as much about security.
+<ul>
+<li>Even Bellovin says: "The Internet in 1989 was a much friendlier place".</li>
+<li>Original Internet had a small number of relatively trustworthy users.</li>
+<li>Design requirements changed over time.</li>
+</ul></li>
+<li>End-to-end argument in action.
+<ul>
+<li>Must provide security at the application level anyway.</li>
+<li>Things are "good enough" at the transport level to let application work.</li>
+</ul></li>
+<li>Some fixes do get added, but only for the worst problems / easier solutions.</li>
+</ul>
+
+<p>How to improve security?</p>
+
+<ul>
+<li>Protocol-compatible fixes to TCP implementations.</li>
+<li>Firewalls.
+<ul>
+<li>Partial fix, but widely used.</li>
+<li>Issue: adversary may be within firewalled network.</li>
+<li>Issue: hard to determine if packet is "malicious" or not.</li>
+<li>Issue: even for fields that are present (src/dst), hard to authenticate.</li>
+<li>TCP/IP's design not a good match for firewall-like filtering techniques.</li>
+<li>E.g., IP packet fragmentation: TCP ports in one packet, payload in another.</li>
+</ul></li>
+<li>Implement security on top of TCP/IP: SSL/TLS, Kerberos, SSH, etc.
+<ul>
+<li>Beware: this paper isn't clear on encryption vs. authentication.</li>
+<li>Will talk about this more in next lecture on Kerberos.</li>
+</ul></li>
+<li>Use cryptography (encryption, signing, MACs, etc).
+<ul>
+<li>Quite a hard problem: protocol design, key distribution, trust, etc.</li>
+</ul></li>
+<li>Some kinds of security hard to provide on top: DoS-resistance, routing.</li>
+<li>Deployment of replacement protocols: SBGP, DNSSEC.</li>
+</ul>

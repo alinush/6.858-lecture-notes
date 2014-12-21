@@ -1,0 +1,283 @@
+Sandboxing Javascript
+=====================
+
+Leftover question from last time: is static analysis actually used?
+  Quite popular for Java, C: sparse/smatch, Coverity, etc.
+  Less popular for Python, PHP in practice.
+  Works well for bugs that have well-defined mistake patterns.
+    NULL pointer checks, some buffer overflows, ..
+  Interesting lesson: false positives often bigger problem than false negs.
+
+What's the goal of this paper?
+  Execute untrusted Javascript code in isolation.
+  More specifically, origin A wants to run some Javascript code,
+    without giving it all of the privileges of origin A.
+
+Why would anyone want to execute untrusted Javascript code?
+  Ads.
+  Mashup applications.
+  Third-party apps in an integrator site.
+  Third-party library (e.g., spell-checker, text editor, etc).
+
+How should we sandbox Javascript?
+  There's a few ways to do it.
+  The paper is one route, taken by Facebook's FBJS and Yahoo's AdSafe.
+  Google's Caja project is similar in some ways, although it tends to give
+    acecss to virtualized objects instead of giving access to real objects.
+  Lab 6 will involve Javascript sandboxing similar to FBJS/AdSafe.
+  This approach has some advantages, but is also hard to get right.
+  Will look at other approaches too.
+
+Approach 1: use an interpreter to safely run untrusted code.
+  The fact that this untrusted code happens to be JS is almost irrelevant.
+    E.g., http://en.wikipedia.org/wiki/Narcissus_(JavaScript_engine)
+  Our interpreter could easily provide special objects -- virtual DOM, etc.
+  +: Conceptually clean.
+  -: Poor performance.
+
+Approach 2: language-level isolation (this paper's plan).
+  Almost think of this as an optimization on above plan (especially Caja).
+    Don't write our own Javascript interpreter.
+    Instead, carefully run untrusted code in the existing interpreter.
+    Need to be sure we can control what the code can do.
+
+  What does it take to reuse the same interpreter but still get isolation?
+    Need to define a more precise goal.
+    Starting point: run Javascript code, as if it runs in separate interpreter.
+      Typically want to ensure code can't access arbitrary DOM variables.
+    Next step: allow sandboxed Javascript code to interact with certain objects.
+
+  Overall workflow:
+    Something checks/rewrites untrusted Javascript code.
+      In some ways, similar to the static analysis tool we looked at on Monday.
+      Usually done on the server, but could be implemented on the client too.
+      Just a transformation algorithm on strings (containing JS code).
+      As a baseline, rely on Javascript's capability-like guarantees:
+        code cannot make up arbitrary references to objects.
+    Then, this checked/rewritten code runs in the browser.
+    In some cases, rewriter adds calls to runtime support routines.
+      Expects those routines to be present in the browser when code runs.
+      Or can just include the code for those routines in the rewritten blob.
+
+  Let's consider various ways in which Javascript code could escape sandbox.
+  Global variable names: document.cookie.
+    Solution 1: prohibit accesses to sensitive names [Jt, Js].
+      Need to prohibit some sensitive identifiers:
+        eval (run arbitrary code that wasn't inspected at analysis time).
+        Function (function constructor, does eval).
+        ...
+      Workable, but non-sensitive names aren't protected.
+      Multiple pieces of untrusted Javascript code not isolated from each other.
+    Solution 2: rename all variable names, adding a unique prefix.
+      Each unique prefix becomes a separate sandbox / protection domain.
+      Also would rewrite things like eval, Function to be meaningless / safe.
+    E.g., origin code was:
+      alert(document.cookie);
+    New code will be:
+      alert(a12345_document.cookie);
+    Also helps prevent access to variable names in an enclosing scope.
+    What if attacker guesses the a12345_ prefix?
+      Shouldn't matter: just need it to be unique, not secret.
+    What if attacker has variables named a12345_foo?
+      Everything will get an extra "a12345_" prefix, so double-prefixed.
+
+  Adding a prefix to all variables breaks "this".
+    Javascript's semi-equivalent of Python's "self".
+    What if we didn't add a prefix to "this"?
+    If running code not bound to an object, "this" is the global scope object.
+      Also known as "window".
+      Can access variables from global scope as attributes of scope object.
+      E.g., "this.document"/"window.document" is the "document" global object.
+      As a result, adversary can use "this" to get access to entire DOM.
+    How to prevent?
+      Problem: unknown statically if function will run as bound to an object.
+    Solution 1: prohibit "this" altogether.
+      Might be reasonable for newly-written code.
+      Less practical if we want to sandbox existing Javascript libraries.
+    Solution 2: runtime instrumentation.
+      E.g., FBJS replaces "this" with "$FBJS.ref(this)".
+    What's going on:
+      $ is a perfectly legitimate character in Javascript variable names.
+      Not really special, but generally reserved for synthesized code.
+      $FBJS is a global object created by the FBJS library.
+      $FBJS.ref() is a function that the static analysis tool knows about.
+      $FBJS.ref() is roughly:
+        function ref(x) {
+          var globalscope = this;
+          // Here, "this" will be the global scope because ref()
+          // will not be bound to any object.
+          if (x==globalscope) { return null; } else { return x; }
+        }
+      [ See NOGLOBAL() in section 4.3 for more precision. ]
+
+  Why are scope objects problematic?
+    Static rewriting adds prefix to variable names, but not attribute names.
+      Some attribute names are special and shouldn't be modified.
+    But scope object allows accessing variable as an attribute.
+      See also the "this" = "window" = global scope problem above.
+    So code might break (variable has seemingly two different names).
+      Attributes in a scope object get renamed: they're variables.
+      Attributes in a non-scoped object don't get renamed.
+    More likely: can access non-rewritten variables, which might
+      belong to a different sandbox (if using multiple sandboxes).
+    Worse yet, may leverage this inconsistency to escape sandbox.
+      Depends on assumptions being made about scope objects.
+
+  How else could an adversary mix scope objects and regular objects?
+    The "with" statement uses a given object as a scope (almost).
+    E.g.:
+      a = { x: 12, y: 23 };
+      with (a) { x = 13; };   // now a.x=13
+    Typically prohibit "with" to keep scope & non-scope objects separate.
+
+  Other ways of getting reference to a scope object?
+    Section 3.2 suggests a few, but they don't work in Firefox/Chrome anymore.
+    So problem disappeared since they wrote the paper.
+
+  Why did they have to prohibit sort, concat, etc?
+    Array's sort/concat/... methods operates on "this" -- the object that
+      the method was bound to, and returns it.
+    Javascript allows taking a method (e.g., Array's sort) and binding
+      to another object.
+    Or it's possible to invoke a method without any binding at all,
+      in which case "this" refers to the global scope.
+    But recent Javascript interpreters don't seem to do this anymore
+      (Firefox, Chrome, ..).
+
+  Shared state.
+    Javascript uses prototypes to implement its version of objects.
+    Prototypes are just another object, and are mutable.
+    Even built-in objects like String have mutable prototypes.
+    E.g.:
+      x=[3,5,2]
+      ""+x -> "3,5,2"
+      Array.prototype.toString = function(){return "zz"}
+      ""+x -> "zz"
+    If malicious code gets access to the prototype object, can
+      change behavior of objects used by trusted code in rest of page.
+    Important to avoid giving access to shared mutable state.
+    Thus, prohibit certain attributes: "prototype", etc.
+
+  Some more attributes of built-in objects can also be dangerous.
+    E.g., all objects have a constructor attribute.
+    For function objects, the function constructor turns strings to code (eval).
+      new Function("return 2+3")() -> 5
+    Can also access constructor without invoking the name "Function":
+      var f = function() { return 3; };
+      f() -> 3
+      f.constructor("return 2+3;")() -> 5
+    Attributes can be accessed in two ways: either dot-separated or brackets.
+      f.attr
+      f['attr']
+    Common plan: filter out dangerous attributes: constructor, __parent__, etc.
+      Paper has a detailed list.
+
+  What if we can't decide array indexing statically?  E.g., a[b].
+    Recall, the PHP static analysis tool would just call it a[bottom].
+    Can't do this here, because we need to be sure we catch everything.
+    Solution 1: statically insert a call to a special function: a[$FBJS.idx(b)].
+    At runtime, the $FBJS.idx() function will check if b's value is allowed.
+      If it's allowed, return b.
+      Otherwise, throw an exception.
+    Static analyzer knows about $FBJS.idx() and assumes it works correctly.
+    Slightly problematic: evaluation order [see 4.1].
+
+  How to implement trusted runtime functions?
+    E.g., $FBJS.idx(), or some other trusted function accessible to sandbox?
+    Consider the following implementation:
+      function idx(x) {
+        if (x == 'constructor') { return '__unknown__'; }
+        return x;
+      }
+      a[idx(b)];
+
+    Problem: there are implicit calls to toString(), effectively:
+      if (x.toString() == 'constructor') { ... }
+      a[idx(b).toString()];
+
+    Can circumvent with:
+      b = { toString: function() { if (count==0) { return 'constructor'; }
+                                   count--; return 'nice'; } };
+      c = 1;
+      Then a[idx(b)] gives us a['constructor']
+
+    What if we call toString() ourselves inside idx()?
+      Not good enough: toString() could return another dynamic object.
+
+    Correct fix: use the built-in String constructor.
+      Need to save a reference to the built-in String constructor for idx().
+      See section 4.1 for more details.
+
+  Is it reasonable to give untrusted code access to a DOM element object?
+    Could assign e.innerHTML = "<script>...</script>".
+    Could traverse up the DOM tree using e.parentNode.
+    Less error-prone to mediate access using a specialized API.
+    Watch out for implicit operations when dealing with JS objects (IDX).
+
+  Is it reasonable to give an object to an untrusted library?
+    E.g., what if I want to import an untrusted sum() function.
+    Can I give it an arbitrary object to sum up?
+    Risk: untrusted code could modify any attributes on the object.
+    Might not be able to modify prototype (if we prohibit that attribute).
+    But could easily assign, say, the toString attribute on object itself.
+
+  How robust is this plan?
+    Turns out to be pretty fragile due to inconsistent implementations.
+    Javascript interpreters don't always correctly implement ECMAscript.
+    E.g., unable to get the examples from section 3.2 to work in
+      either Firefox or Chrome anymore.
+    Sandboxing depends intimately on understanding Javascript engine.
+    Hard to do this reliably when the JS engine changes underneath.
+    Proofs aren't very meaningful under non-compliant ECMAscript engines.
+    Interesting final project: write something similar for Python?
+
+  +: Fine-grained isolation.
+  +: Potential compatibility with existing Javascript code.
+  -: Fragile.
+  -: Crossing between trusted & untrusted code requires careful analysis.
+     E.g., exposing DOM objects, calling functions in either direction, etc.
+     (Some examples came up with idx(), but not fully analyzed in this paper.)
+
+Approach 3: run the Javascript code in another origin, using an <iframe>.
+  How to generate a separate origin?
+    Could create random subdomains (e.g., randomstring.google.com).
+    But that origin isn't quite isolated: can write to google.com cookies.
+    New HTML5 feature: <iframe sandbox="allow-scripts">.
+    Creates a new "synthetic" origin for the iframe.
+    Potentially useful use case: <iframe sandbox=""> does not allow JS at all.
+    Might be good for displaying untrusted documents that may have Javascript.
+    Possible risk: if attacker guesses iframe page URL, can load w/o sandbox
+      and run JS code on that page with access to your standard origin!
+  +: Enforced by the browser's same-origin policy: perhaps less fragile.
+  -: Does not allow shared state / interactions between origins.
+  -: Limits display use to iframe's rectangle.
+
+Approach 4: interaction between frames using server communication.
+  Play tricks like <SCRIPT SRC="http://server.com/msg?params">.
+  Use cross-origin resource sharing (CORS) to allow cross-origin XHR.
+  -: Requires round-trip to the server, higher latency.
+
+Approach 5: allow some interaction between frames on the client.
+  Javascript provides a postMessage() API.
+  Requires sender to have a reference on the recipient frame.
+    Typically done by having one frame use an <iframe> to load another frame.
+    Parent gets a handle on the child frame.
+    In the child frame, 'parent' refers to the containing frame.
+  Given a frame/window w, send a message using:
+    w.postMessage(m, origin);
+  Sends message m as long as w is in the specified origin (string).
+    Why worry about the recipient's origin?
+    Potential problem: adversary might navigate frame/window w!
+  HTML5 allows many kinds of data structures to be passed as a message.
+    Structured clone algorithm.
+  Receiving frame must register to receive messages:
+    window.addEventListener('message', processMsg, false);
+    function processMsg(event) {
+      // check event.origin for source of message
+      ...
+    }
+  +: Strict isolation, only need to inspect messages being sent over.
+  -: Requires RPC wrappers for everything.
+  -: Hard to share objects (including DOM objects).
+  -: Still limits display to iframe's rectangle, big deal for ads.
+

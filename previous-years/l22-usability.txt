@@ -1,0 +1,212 @@
+Usable security
+===============
+
+What problem does this paper try to address?
+
+Is the problem of usability in security real, important?
+  Concrete examples of things that go wrong?
+
+Is usable security the same as general usability of your system?
+  Not quite: some differences.
+    General usability problems only rarely lead to disaster.
+    Security usability problems often result in disaster, without user knowing.
+  Security is a secondary task: user wants to do something other than security.
+  Negative goal / weakest link: must consider entire system.
+  Abstract, hard to reason about; little feedback: security often not tangible.
+    Hard to know if you're secure or not.
+    Easy to know if you got your work done.
+  Users don't fully understand threats, mechanisms they're using.
+
+Why do we need users in the loop?
+  Good reasons: users should be ultimately in control of their security.
+  Bad reasons: programmers didn't know what to do, so they asked the user.
+  Backwards compatibility.
+
+Good principle: safe defaults.
+
+Good principle: avoid asking users to make security decisions when possible.
+  Rely on safe defaults.
+
+Example from the paper: security in wireless pairing.
+  What's the problem?  Why does the user have to be involved?
+    MITM attacks.
+    Adversary assumed to control the wireless channel, can't trust messages.
+    Need to verify authenticity in a way that adversary can't tamper with.
+  What happens today?  E.g., pairing Bluetooth devices?
+    Many different schemes.
+    User can configure certificates (described in paper).
+    User can enter PIN on both devices.
+      Does it matter that the PIN is short (4 digits)?
+      If chosen by user, might not be random enough.
+      Maybe better to have one device choose the PIN.
+    User can verify hashes of keys.
+      "Yes" vs "Choose the correct hash" vs "Enter the hash from other device"?
+    User can use some out-of-band channel: IR, audio, accelerometer, camera, ..
+  What's wrong with these schemes?
+  What do the authors propose?
+    Users go into a physically isolated room to perform pairing.
+  Any other ideas?  TEP?
+
+Good principle: use active warnings/questions, not passive.
+  What does active/passive mean?
+    Active: user forced to make choice, perhaps taken out of previous workflow.
+      Forces user to think about the choice, consider what it means.
+    Passive: user asked whether they want to accept something and continue.
+      Most users just want to continue, so they'll look for easiest way there.
+      "OK" or "Cancel" buttons on a security dialog are likely a bad design.
+  Example: "Does the hash match?" vs "Please choose the right hash".
+
+Usability of SSL certificates.
+  What steps do you have to go through in order to set up SSL certs w/ MIT?
+    Installing a server CA: download the MIT CA certificate.
+      User should do so securely: downloading via http is a bad idea.
+      No indication whether you have done this securely.
+    Specifying flags for server CA.
+      Trust CA to identify web sites, email users, or software developers?
+      No indication which are appropriate.
+    Obtaining a client certificate.
+      Enter Kerberos principal, password, MIT ID.
+      Choose key size, certificate lifetime in days.  Why?
+  Using SSL certificates with https://student.mit.edu?
+    Browser prompts user when the client certificate is used.
+  Using SSL certificates with https://libraries.mit.edu/ "Your account"?
+    Instead of using certificates directly, web site uses some higher-level
+      identity provider (similar to what we talked about in identity lecture).
+    Intermediate site asks what account provider to use.
+    User chooses "MIT Kerberos account (or MIT web certificate)".
+    Next page: enter Kerberos user/password, or click "Use Certificate".
+      [ User must know what origin is OK for entering password? ]
+    Finally, browser prompts user to select the client cert to use.
+
+Regardless of whether user needs client certs, how do they know they're secure?
+  Say, still visiting WebSIS: when is it "secure"?
+    Depends on the definition of "secure".
+    One definition: browser got the page from the right server,
+      where right has to do with what the user believes.
+    Matters when typing some sensitive info to a page (e.g., password).
+    Matters when relying on some important info from page (e.g., grades).
+  Browser tries to provide a UI to indicate the origin of the site.
+  User is assumed to interpret the UI's meaning correctly.
+  What are the rules for interpreting the UI?
+    Securely visiting a site from origin foo if the URL starts with https://foo/
+      and the browser displays a lock icon next to the address bar.
+    What happens in the UI when you accept a self-signed certificate?
+    What happens in the UI if the certificate is expired?
+    What happens in the UI if the origin name doesn't match certificate name?
+      User prompted to make a decision about whether to trust certificate.
+      Screen looks the same after user confirms an exception.
+      Presumably the assumption is, user is aware of the approved exceptions.
+  Phishing attacks often work despite SSL, HTTPS, and this UI.
+
+Simplest attack: adversary's phishing site doesn't use SSL or HTTPS.
+  Users might not even know to look for SSL certificate and lock icon.
+
+Visual deception.
+  Copy logos, site layout.
+  Inject look-alike security indicators.
+  Create new windows that look like other dialog boxes.
+  User intuitively trained to authenticate based on page contents, not URL bar.
+
+How do you know if the browser's lock icon is authentic?
+  Clever attack: set the favicon to a lock icon, appears near the address bar.
+
+Look-alike domains.
+  Visually similar (use a 0 instead of an o, etc).
+  Exploit incorrect user intuition (ebay-security.com).
+  Unicode domain names: difficult/impossible to visually distinguish origins.
+
+URLs that make it hard to visually identify origin.
+  https://www.paypal.com@attacker.com/...
+
+Good principle: make security indicators, identifiers explicit, unambiguous.
+  Avoid user having to figure out origin.
+  Maybe explicitly have an "insecure" indicator for non-SSL sites?
+
+What are "extended validation" certificates?
+  Browser displays green box containing company name corresponding to cert.
+  What problem are they solving?  User validating origin name.
+  How would the user know to look for an extended validation certificate?
+    No way to know ahead of time if you should see a regular or EV cert.
+    Similar to the bootstrapping problem in ForceHTTPS.
+
+How do you know if a browser's UI is authentic?
+  If it's taking up the entire screen, outermost window is probably OK.
+  Must assume browser is not in full-screen mode.
+  Otherwise, one web page can draw a legitimate-looking browser sub-window.
+  Easy to guess what window would look like for common systems (e.g., Windows).
+
+Confusing indicators: link target in the status bar.
+  Can be spoofed with javascript.
+
+Mixed content: many browsers prompt user.
+  "This page contains both secure and insecure items.  Load insecure items?"
+  Users want the page to work, so they click yes.
+  Again, principles of active vs passive, safe defaults.
+
+Why is phishing such a big problem?  What UI security problems contribute to it?
+  Novice users don't understand the threats they are facing.
+  Users don't have a clear mental model of the browser's security policy.
+    Users don't understand technical details of what constitutes an origin.
+      Some browsers (recent Firefox) copy origin into separate UI box.
+      Helps save user from visually parsing origin out of the URL.
+    Users don't understand what to look for in an SSL certificate / EV certs.
+    Users don't understand implications of security decisions.
+      Allow cookie?  Allow non-SSL content?
+  Browsers have complex security indicators.
+    Need to look at origin in URL bar, SSL certificate.
+    Security indicators can be absent instead of indicating a warning/error.
+    E.g., if site is non-SSL, nothing out-of-the-ordinary appears to the user.
+  Web applications don't use the indicators correctly.
+    Even legitimate companies often outsource some services!
+      E.g., URLs like "ebay.surveysite.com"
+
+How to combat phishing?
+  Most common: maintain a database of known phishing sites.
+    Why isn't this fully effective?
+  Active vs passive warnings.
+    Habituation: users accustomed to warnings/errors.
+    Users focused on getting their work done.
+    If the warning gives an option to continue, users may think it's OK.
+  More intrusive measures are often more effective here.
+    Replace passwords with some other form of auth (smartcard, PAKE, etc).
+      Only works for credentials; attackers might still steal DOB, SSN, ..
+      Smartphone may be a marginally better device than desktop browser.
+      Bank of America now embeds small chip in ATM card, displays 6-digit PIN.
+        "SafePass": PIN required to log into online banking account.
+    Turn phishing into online attack.
+      Site must display an agreed-upon image before user enters password.
+      E.g., "SiteKey" used by Bank of America.
+      Can be hard for users to comprehend how and what this defends from.
+      As with EV certs, how does user know when to expect it?
+
+Other human factors in system security
+  Social engineering attacks
+  Least privilege conflicts with allowing users to do their work
+  Trust in user vs trust in user's machine
+    Could go both ways.
+    Sometimes user is more trusted than machine (e.g., logging into bank site).
+    Other times, user is less trusted (e.g., DRM, online games, etc).
+
+How to design usable systems?
+  Avoid generalizing too much (e.g., global PKI vs. app-specific key mgmt).
+    Users may not understand abstract general concepts.
+    Easier to explain application-specific issues, decisions.
+  Avoid false positives in security warnings (and then make them errors).
+    Active security warnings force user to make a choice (cannot ignore).
+    Present users with useful choices when possible.
+      Users want to perform their task, don't want to choose "stop" option.
+      E.g., search google for an authentic web site vs phishing attack?
+  Secure defaults; secure by design; "invisible security".
+    When does this work?
+    When is this insufficient?
+  Intuitive security mechanisms that make sense to the user.
+    Some of the Windows "privacy" knobs or wizards that give few options.
+  Train users (problem: attacks are rare, users will not learn on their own).
+    Users unlikely to spend time to learn on their own.
+    Interesting idea: try to train users as part of normal workflow.
+      Try to mount phishing attacks on user by sending spam to them.
+      If they fall for an attack, tell them what they should've looked for.
+      Can get tiresome after a while, if not done properly..
+    Security training games.
+  System designers, developers are not representative users.
+

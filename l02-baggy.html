@@ -1,0 +1,769 @@
+<h1>Buffer overflows, baggy bounds</h1>
+
+<p><strong>Note:</strong> These lecture notes were transcribed and slightly modified from the ones posted on the 6.858 <a href="http://css.csail.mit.edu/6.858/2014/schedule.html">course website</a> from 2014.</p>
+
+<h2>Review of buffer overflow attacks</h2>
+
+<p>Last lecture, we looked at the basics of performing a
+buffer overflow attack. That attack leveraged several
+observations:</p>
+
+<ul>
+<li>Systems software is often written in C (operating
+systems, file systems, databases, compilers, network
+servers, command shells and console utilities)</li>
+<li>C is essentially high-level assembly, so...
+<ul>
+<li>Exposes raw pointers to memory</li>
+<li>Does not perform bounds-checking on arrays
+(b/c the hardware doesn't do this, and C
+wants to get you as close to the hardware
+as possible)</li>
+</ul></li>
+<li>Attack also leveraged architectural knowledge about
+how x86 code works:
+<ul>
+<li>The direction that the stack grows</li>
+<li>Layout of stack variables (esp. arrays and
+return addresses for functions)</li>
+</ul></li>
+</ul>
+
+<p><code>read_req.c:</code></p>
+
+<pre><code>    void read_req() {
+      char buf[128];
+      int i;
+      gets(buf);
+      //. . . do stuff w/buf . . .
+    }
+</code></pre>
+
+<p>What does the compiler generate in terms of memory layout? x86 stack looks like this:</p>
+
+<pre><code>  %esp points to the last (bottom-most) valid thing on
+  the stack.
+
+  %ebp points to the caller's %esp value.
+
+                     +------------------+
+    entry %ebp ----&gt; | .. prev frame .. |
+                     |                  |  |
+                     |                  |  | stack grows down
+                     +------------------+  |
+    entry %esp ----&gt; |  return address  |  v
+                     +------------------+
+    new %ebp ------&gt; |    saved %ebp    |
+                     +------------------+
+                     |     buf[127]     |
+                     |       ...        |
+                     |      buf[0]      |
+                     +------------------+
+    new %esp ------&gt; |        i         |
+                     +------------------+
+</code></pre>
+
+<p>How does the adversary take advantage of this code?</p>
+
+<ul>
+<li>Supply long input, overwrite data on stack past buffer.</li>
+<li><strong>Key observation 1:</strong> attacker can overwrite the <em>return
+address</em>, make the program jump to a place of the
+attacker's choosing!</li>
+<li><strong>Key observation 2:</strong> attacker can set return address to
+the buffer itself, include some x86 code in there!</li>
+</ul>
+
+<p>What can the attackers do once they are executing code?</p>
+
+<ul>
+<li>Use any privileges of the process! If the process is
+running as root or Administrator, it can do whatever
+it wants on the system. Even if the process is not
+running as root, it can send spam, read files, and
+interestingly, attack or subvert other machines behind
+the firewall.</li>
+<li>Hmmm, but why didn't the OS notice that the buffer has
+been overrun?
+<ul>
+<li>As far as the OS is aware, nothing strange has
+happened! Remember that, to a first approximation,
+the OS only gets invoked by the web server when
+the server does IO or IPC. Other than that, the
+OS basically sits back and lets the program execute,
+relying on hardware page tables to prevent processes
+from tampering with each other's memory. However,
+page table protections don't prevent buffer overruns
+launched by a process "against itself," since the
+overflowed buffer and the return address and all of
+that stuff are inside the process's valid address
+space.</li>
+<li>Later in this lecture, we'll talk about things
+that the OS <em>can</em> do to make buffer overflows
+more difficult.</li>
+</ul></li>
+</ul>
+
+<h2>Fixing buffer overflows</h2>
+
+<p><strong>Approach #1:</strong> Avoid bugs in C code.</p>
+
+<ul>
+<li>Hard / impossible to achieve.</li>
+<li>Programmer should carefully check sizes of buffers,
+strings, arrays, etc. In particular, the programmer
+should use standard library functions that take
+buffer sizes into account (<code>strncpy()</code> instead of <code>strcpy()</code>,
+<code>fgets()</code> instead of <code>gets()</code>, etc.).</li>
+<li>Modern versions of <code>gcc</code> and Visual Studio warn you when
+a program uses unsafe functions like gets(). In general,
+<strong>YOU SHOULD NOT IGNORE COMPILER WARNINGS.</strong> Treat warnings
+like errors!</li>
+<li><strong>Good:</strong> Avoid problems in the first place!</li>
+<li><strong>Bad:</strong> It's hard to ensure that code is bug-free, particularly
+if the code base is large. Also, the application itself may
+define buffer manipulation functions which do not use <code>fgets()</code>
+or <code>strcpy()</code> as primitives.</li>
+</ul>
+
+<p><strong>Approach #2:</strong> Build tools to help programmers find bugs.</p>
+
+<ul>
+<li>For example, we can use static analysis to find problems in
+source code before it's compiled. Imagine that you had a
+function like this:</li>
+</ul>
+
+<p><code>foo.c:</code></p>
+
+<pre><code>    void foo(int *p) {
+        int offset;
+        int *z = p + offset;
+        if(offset &gt; 7){
+            bar(offset);
+        }
+    }
+</code></pre>
+
+<ul>
+<li>By statically analyzing the control flow, we can tell
+that offset is used without being initialized.</li>
+<li>The <code>if</code>-statement also puts bounds on offset that we may
+be able to propagate to bar.</li>
+<li>We'll talk about static analysis more in later lectures.</li>
+<li><em>"Fuzzers"</em> that supply random inputs can be effective for
+finding bugs. Note that fuzzing can be combined with static
+analysis to maximize code coverage!</li>
+<li><strong>Bad:</strong> Difficult to prove the complete absence of bugs, esp.
+for unsafe code like C.</li>
+<li><strong>Good:</strong> Even partial analysis is useful, since programs should
+become strictly less buggy. For example, baggy bounds checking
+cannot catch all memory errors, but it can detect many 
+important kinds.</li>
+</ul>
+
+<p><strong>Approach #3:</strong> Use a memory-safe language (JavaScript, C#, Python).</p>
+
+<ul>
+<li><strong>Good:</strong> Prevents memory corruption errors by not exposing raw
+memory addresses to the programmer, and by automatically
+handling garbage collection.</li>
+<li><strong>Bad:</strong> Low-level runtime code <strong>does</strong> use raw memory addresses.
+So, that runtime core still needs to be correct. For example,
+<em>heap spray attacks</em>:
+<ul>
+<li><a href="https://www.usenix.org/legacy/event/sec09/tech/full_papers/ratanaworabhan.pdf">NOZZLE: A Defense Against Heap-spraying Code Injection Attacks</a></li>
+<li><a href="https://www.corelan.be/index.php/2011/12/31/exploit-writing-tutorial-part-11-heap-spraying-demystified/">Exploit writing tutorial part 11 : Heap Spraying Demystified</a></li>
+</ul></li>
+<li><strong>Bad:</strong> Still have a lot of legacy code in unsafe languages (FORTRAN and COBOL 
+oh noes).</li>
+<li><strong>Bad:</strong> Maybe you need access to low-level hardware features
+(e.g., you're writing a device driver)</li>
+<li><strong>Bad:</strong> Perf. is worse than a fine-tuned C application?
+<ul>
+<li>Used to be a bigger problem, but hardware and
+high-level languages are getting better.
+<ul>
+<li>JIT compilation FTW!</li>
+<li><a href="http://asmjs.org/faq.html">asm.js</a> is within 2x of native C++ performance!     </li>
+<li>Use careful coding to avoid garbage collection
+jitter in critical path.</li>
+<li>Maybe you're a bad person / <em>language chauvinist</em>
+who doesn't know how to pick the right tool
+for the job. If your task is I/O-bound, raw
+compute speed is much less important. Also,
+don't be the chump who writes text manipulation
+programs in C.</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p>All 3 above approaches are effective and widely used, but
+buffer overflows are still a problem in practice.</p>
+
+<ul>
+<li>Large/complicated legacy code written in C is very prevalent.</li>
+<li>Even newly written code in C/C++ can have memory errors.</li>
+</ul>
+
+<p>How can we mitigate buffer overflows despite buggy code?</p>
+
+<ul>
+<li>Two things going on in a "traditional" buffer overflow:
+<ul>
+<li>Adversary gains control over execution (program counter).</li>
+<li>Adversary executes some malicious code.</li>
+</ul></li>
+<li>What are the difficulties to these two steps?
+<ul>
+<li>Requires overwriting a code pointer (which is later invoked).
+Common target is a return address using a buffer on the stack.
+Any memory error could potentially work, in practice.
+Function pointers, C++ vtables, exception handlers, etc.</li>
+<li>Requires some interesting code in process's memory.
+This is often easier than #1, because:
+<ul>
+<li>it's easy to put code in a buffer, and</li>
+<li>the process already contains a lot of code that
+might be exploitable.</li>
+<li>however, the attacker needs to put this code in a
+predictable location, so that the attacker can set the
+code pointer to point to the evil code!</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h3>Mitigation approach 1: canaries (e.g., StackGuard, gcc's SSP)</h3>
+
+<ul>
+<li>Idea: OK to overwrite code pointer, as long as we catch it before
+invocation.</li>
+<li>One of the earlier systems: StackGuard
+<ul>
+<li>Place a canary on the stack upon entry, check canary value
+before return.</li>
+<li>Usually requires source code; compiler inserts canary 
+checks.</li>
+<li><strong>Q:</strong> Where is the canary on the stack diagram?
+<strong>A:</strong> Canary must go "in front of" return address on the
+stack, so that any overflow which rewrites return
+address will also rewrite canary.</li>
+</ul></li>
+</ul>
+
+<p><code>stack layout:</code></p>
+
+<pre><code>                     |                  |
+                     +------------------+
+    entry %esp ----&gt; |  return address  |    ^
+                     +------------------+    |
+    new %ebp ------&gt; |    saved %ebp    |    |
+                     +------------------+    |
+                     |     CANARY       |    | Overflow goes
+                     +------------------+    | this way.
+                     |     buf[127]     |    |
+                     |       ...        |    |
+                     |      buf[0]      |    |
+                     +------------------+
+                     |                  |
+</code></pre>
+
+<ul>
+<li><strong>Q:</strong> Suppose that the compiler always made the canary
+4 bytes of the <code>'a'</code> character. What's wrong with this?</li>
+<li><strong>A:</strong> Adversary can include the appropriate canary value
+in the buffer overflow!</li>
+<li>So, the canary must be either hard to guess, or it
+can be easy to guess but still resilient against
+buffer overflows. Here are examples of these approaches.
+<ul>
+<li><em>"Terminator canary"</em>: four bytes (0, CR, LF, -1)</li>
+<li>Idea: Many C functions treat these characters
+as terminators(e.g., <code>gets()</code>, <code>sprintf()</code>). As a
+result, if the canary matches one of these
+terminators, then further writes won't happen.</li>
+<li>Random canary generated at program init time:
+Much more common today (but, you need good
+randomness!).</li>
+</ul></li>
+</ul>
+
+<p>What kinds of vulnerabilities will a stack canary not catch?</p>
+
+<ul>
+<li>Overwrites of function pointer variables before the canary.</li>
+<li>Attacker can overwrite a data pointer, then leverage it to
+do arbitrary mem writes.</li>
+</ul>
+
+<p><code>data pointer example:</code></p>
+
+<pre><code>    int *ptr = ...;
+    char buf[128];
+    gets(buf);  // Buffer is overflowed, and overwrites ptr.
+    *ptr = 5;   // Writes to an attacker-controlled address!
+              // Canaries can't stop this kind of thing.
+</code></pre>
+
+<ul>
+<li>Heap object overflows (function pointers, C++ vtables).</li>
+<li><code>malloc</code>/<code>free</code> overflows</li>
+</ul>
+
+<p><code>malloc example:</code></p>
+
+<pre><code>    int main(int argc, char **argv) {
+        char *p, *q;
+
+        p = malloc(1024);
+        q = malloc(1024);
+        if(argc &gt;= 2)
+            strcpy(p, argv[1]);
+        free(q);
+        free(p);
+        return 0;
+    }
+</code></pre>
+
+<ul>
+<li>Assume that the two blocks of memory belonging
+to <code>p</code> and <code>q</code> are adjacent/nearby in memory.</li>
+<li>Assume that <code>malloc</code> and <code>free</code> represent memory blocks
+like this:</li>
+</ul>
+
+<p><code>malloc memory blocks:</code></p>
+
+<pre><code>        +----------------+  
+        |                |     
+        |   App data     |     
+        |                |      Allocated memory block
+        +----------------+     
+        |   size         |     
+        +----------------+  
+
+
+        +----------------+
+        |   size         |
+        +----------------+
+        |  ...empty...   |
+        +----------------+  
+        |   bkwd ptr     |     
+        +----------------+          
+        |   fwd ptr      |      Free memory block
+        +----------------+     
+        |   size         |     
+        +----------------+
+</code></pre>
+
+<ul>
+<li>So, the buffer overrun in <code>p</code> will overwrite the
+size value in <code>q</code>'s memory block! Why is this a
+problem?
+<ul>
+<li>When <code>free()</code> merges two adjacent free blocks,
+it needs to manipulate <code>bkwd</code> and <code>fwd</code> pointers...</li>
+<li>...and the pointer calculation uses
+size to determine where the free memory
+block structure lives!</li>
+</ul></li>
+</ul>
+
+<p><code>free() internals:</code></p>
+
+<pre><code>    p = get_free_block_struct(size);
+    bck = p-&gt;bk;
+    fwd = p-&gt;fd;
+    fwd-&gt;bk = bck;  // Writes memory!
+    bck-&gt;fd = fwd;  // Writes memory!
+</code></pre>
+
+<ul>
+<li>The free memory block is represented as a C
+ <code>struct</code>; by corrupting the size value, the
+ attacker can force <code>free()</code> to operate on a
+ fake <code>struct</code> that resides in attacker-controlled
+ memory and has attacker-controlled values
+ for the forward and backwards pointers.</li>
+<li>If the attacker knows how <code>free()</code> updates
+ the pointers, he can use that update code
+ to write an arbitrary value to an arbitrary
+ place. For example, the attacker can overwrite
+ a return address.
+<ul>
+<li>Actual details are a bit more complicated; if you're
+interested in gory details, go 
+<a href="http://www.win.tue.nl/~aeb/linux/hh/hh-11.html">here</a></li>
+<li>The high-level point is that stack canaries won't
+prevent this attack, because the attacker is "skipping
+over" the canary and writing directly to the return
+address!</li>
+</ul></li>
+</ul>
+
+<h3>Mitigation approach 2: bounds checking</h3>
+
+<ul>
+<li><strong>Overall goal:</strong> prevent pointer misuse by checking if pointers
+are in range.</li>
+<li><strong>Challenge:</strong> In C, it can be hard to differentiate between
+a valid pointer and an invalid pointer. For example,
+suppose that a program allocates an array of characters...
+<code>char x[1024];</code></li>
+<li>... as well as a pointer to some place in that array, e.g., <code>char *y = &amp;x[107];</code></li>
+<li>Is it OK to increment <code>y</code> to access subsequent elements?
+<ul>
+<li>If <code>x</code> represents a string buffer, maybe yes.</li>
+<li>If <code>x</code> represents a network message, maybe no.</li>
+<li>Life is even more complicated if the program uses unions.</li>
+</ul></li>
+</ul>
+
+<p><code>union example:</code></p>
+
+<pre><code>    union u{
+        int i;
+        struct s{
+            int j;
+            int k;
+        };
+    };
+
+    int *ptr = &amp;(u.s.k); // Does this point to valid data?
+</code></pre>
+
+<ul>
+<li><strong>The problem</strong> is that, in C, <em>a pointer does not encode 
+information about the intended usage semantics for that 
+pointer.</em></li>
+<li>So, a lot of tools don't try to guess those semantics. 
+Instead, the tools have a less lofty goal than "totally 
+correct" pointer semantics: the tools just enforce the
+memory bounds on heap objects and stack objects. At a high 
+level, here's the goal:
+<ul>
+<li>For a pointer <code>p'</code> that's derived from <code>p</code>, <code>p'</code> should only
+be dereferenced to access the valid memory region that
+belongs to <code>p</code>.</li>
+</ul></li>
+<li><em>Enforcing memory bounds</em> is a <strong>weaker</strong> goal than <em>enforcing
+"totally correct" pointer semantics</em>. Programs can still shoot
+themselves in the foot by trampling on their memory in nasty
+ways (e.g., in the union example, the application may write
+to pointer even though it's not defined).</li>
+<li>However, bounds checking is still useful because it prevents
+<em>arbitrary</em> memory overwrites. The program can only trample
+its memory if that memory is actually allocated! <em>THIS IS
+CONSIDERED PROGRESS IN THE WORLD OF C.</em></li>
+<li>A drawback of bounds checking is that it typically requires
+changes to the compiler, and programs must be recompiled with
+the new compiler. This is a problem if you only have access
+to binaries.</li>
+</ul>
+
+<h4>What are some approaches for implementing bounds checking?</h4>
+
+<p><strong>Bounds checking approach #1: Electric fences</strong></p>
+
+<ul>
+<li>These are an old approach that had the virtue of being simple.</li>
+<li><strong>Idea:</strong> Align each heap object with a guard page, and use page
+tables to ensure that accesses to the guard page cause a 
+fault.</li>
+</ul>
+
+<p><code>electric fence:</code></p>
+
+<pre><code>    +---------+
+    | Guard   |
+    |         |  ^
+    +---------+  | Overflows cause a page exception
+    |  Heap   |  |
+    |  obj    |  |
+    +---------+
+</code></pre>
+
+<ul>
+<li>This is a convenient debugging technique, since a heap 
+overflow will immediately cause a crash, as opposed to 
+silently corrupting the heap and causing a failure at some 
+indeterminate time in the future.</li>
+<li>Big advantage: Works without source code: don't need to
+change compilers or recompile programs! 
+<ul>
+<li>You <em>do</em> need to relink them so that they use a new version of <code>malloc</code>
+which implements electric fences.</li>
+</ul></li>
+<li>Big disadvantage: Huge overhead! There's only one object
+per page, and you have the overhead of a dummy page which
+isn't used for "real" data.</li>
+<li>Summary: Electric fences can be useful as debugging technique,
+and they can prevent some buffer overflows for heap objects.
+However, electric fences can't protect the stack, and the
+memory overhead is too high to use in production systems.</li>
+</ul>
+
+<p><strong>Bounds checking approach #2: Fat pointer</strong></p>
+
+<ul>
+<li><strong>Idea:</strong> Modify the pointer representation to include bounds 
+information. Now, a pointer includes a memory address and 
+bounds information about an object that lives in that memory 
+region.</li>
+</ul>
+
+<p><code>example:</code></p>
+
+<pre><code>    Regular 32-bit pointer  
+     +-----------------+
+     | 4-byte address  |
+     +-----------------+
+
+    Fat pointer (96 bits)
+     +-----------------+----------------+---------------------+
+     | 4-byte obj_base | 4-byte obj_end | 4-byte curr_address |
+     +-----------------+----------------+---------------------+
+</code></pre>
+
+<ul>
+<li>You need to modify the compiler and recompile the 
+programs to use the fat pointers. The compiler
+generates code to abort the program if it dereferences
+a pointer whose address is outside of its own
+<code>base ... end</code> range.</li>
+</ul>
+
+<p><code>example:</code></p>
+
+<pre><code>        int *ptr = malloc(sizeof(int) * 2);
+        while(1){
+            *ptr = 42;       &lt;----------|
+            ptr++;                      |
+        }                               |
+          ______________________________|
+         |
+
+    This line checks the current address of the pointer and
+    ensures that it's in-bounds. Thus, this line will fail
+    during the third iteration of the loop.
+</code></pre>
+
+<ul>
+<li><strong>Problem #1:</strong> It can be expensive to check all pointer
+dereferences. The C community hates things that are
+expensive, because C is all about SPEED SPEED SPEED.</li>
+<li><strong>Problem #2:</strong> Fat pointers are incompatible with a lot of
+existing software.
+<ul>
+<li>You can't pass a fat pointer to an unmodified library.</li>
+<li>You can't use fat pointers in fixed-size data
+structures. For example, <code>sizeof(that_struct)</code>
+will change!</li>
+<li><em>Updates to fat pointers are not atomic</em>, because they span
+multiple words. Some programs assume that pointer writes
+are atomic.</li>
+</ul></li>
+</ul>
+
+<h4>Bounds checking approach #3: Shadown data structures</h4>
+
+<p><strong>Idea:</strong> Use shadow data structures to keep track of bounds information 
+(<a href="http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.42.3156">Jones and Kelly</a>, <a href="https://www.usenix.org/legacy/event/sec09/tech/full_papers/akritidis.pdf">Baggy bounds</a>).</p>
+
+<ul>
+<li>For each allocated object, store how big the object is. For example:
+<ul>
+<li>Record the value passed to malloc:
+<ul>
+<li><code>char *p = malloc(mem_size);</code></li>
+</ul></li>
+<li>For static variables, the values are determined by the compiler:
+<ul>
+<li><code>char p[256];</code></li>
+</ul></li>
+<li>For each pointer, we need to interpose on two operations:
+<ol>
+<li>pointer arithmetic: <code>char *q = p + 256;</code></li>
+<li>pointer dereferencing: <code>char ch = *q;</code></li>
+</ol></li>
+<li><strong>Q:</strong> Why do we need to interpose on dereference? Can't we do
+just arithmetic?</li>
+<li><strong>A:</strong> An invalid pointer isn't always a bug! For example,
+a pointer to one element past the last item of an
+array might be used as a stopping test in a loop.
+Applications can also do goofy stuff like:
+<ul>
+<li>Simulating 1-indexed arrays</li>
+<li>Computing p+(a-b) as (p+a)-b</li>
+<li>Generating OOB pointers that are later checked for validity</li>
+</ul></li>
+<li>So, the mere creation of invalid pointer shouldn't cause
+program to fail.</li>
+<li><strong>Q:</strong> Why do we need to interpose on arithmetic? Can't we do
+just dereference?</li>
+<li><strong>A:</strong> Interposing on arithmetic is what allows us to track
+the provenance of pointers and set the OOB bit. Without
+the OOB, we won't be able to tell when a derived pointer
+goes outside of the bounds of its base object.</li>
+</ul></li>
+<li><strong>Challenge 1:</strong> How do we find the bounds information for a
+regular pointer, i.e., a pointer that's in-bounds?
+<ul>
+<li><em>Naive:</em> Use a hash table or interval tree to map addresses
+to bounds.
+<ul>
+<li>Good: Space efficient (only store info for in-use pointers,
+not all possible addresses).</li>
+<li>Bad: Slow lookup (multiple memory accesses per look-up).</li>
+</ul></li>
+<li><em>Naive:</em> Use an array to store bounds info for <em>every</em> memory
+address.
+<ul>
+<li>Good: Fast!</li>
+<li>Bad: Really high memory overhead. </li>
+</ul></li>
+</ul></li>
+<li><strong>Challenge 2:</strong> How do we force out-of-bounds pointer 
+dereferences to fail?
+<ul>
+<li><em>Naive:</em> Instrument every pointer dereference.
+<ul>
+<li>Good: Uh, it works.</li>
+<li>Bad: Expensive. We have to execute extra code for
+every dereference!</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h4>The baggy bounds approach: 5 tricks</h4>
+
+<ul>
+<li><strong>Trick 1:</strong> Round up each allocation to a power of 2, and align the
+start of the allocation to that power of 2.</li>
+<li><strong>Trick 2:</strong> Express each range limit as <code>log_2(alloc_size).</code>
+<ul>
+<li>For 32-bit pointers, only need 5 bits to express
+the possible ranges: we can only allocate objects of a
+set of 32 different sizes: <code>2^1 = 2 bytes, 2^2 = 4 bytes
+..., 2^31 bytes or 2^32 bytes</code>, and we store the log base 2
+of the allocation size, which is a number between 1 and 32, 
+so we only need 5 bits for it.</li>
+</ul></li>
+<li><strong>Trick 3:</strong> Store limit info in a linear array: fast lookup with
+one byte per entry. Also, we can use virtual memory to
+allocate the array on-demand!</li>
+<li><strong>Trick 4:</strong> Allocate memory at slot granularity (e.g., 16 bytes):
+<strong>fewer array entries.</strong>
+<ul>
+<li>That means <strong>min. alloc. size</strong> is 16 bytes</li>
+<li>...and, since pointers will be aligned to their allocation 
+size boundary, it means the last 4 bits of the pointer are all zero</li>
+</ul></li>
+</ul>
+
+<p><code>example:</code></p>
+
+<pre><code>    slot_size = 16
+
+    p = malloc(16);  --&gt;  table[p/slot_size] = 4;
+    p = malloc(32);  --&gt;  table[p/slot_size] = 5;
+                     \-&gt;  table[(p/slot_size) + 1] = 5;
+</code></pre>
+
+<ul>
+<li><strong>Trick 4 (continued):</strong>
+<ul>
+<li>Now, given a known good pointer <code>p</code>, and a derived
+pointer <code>p'</code>, we can test whether <code>p'</code> is valid by
+checking whether both pointers have the same
+prefix in their address bits, and they only differ
+in their <code>e</code> least significant bits, where <code>e</code> is equal
+to the logarithm of the <em>allocation size</em>. </li>
+</ul></li>
+</ul>
+
+<p><code>example:</code></p>
+
+<pre><code>    C code
+    ------ 
+    p' = p + i;
+
+    Bounds check
+    ------------
+    size = 1 &lt;&lt; table[p &gt;&gt; log_of_slot_size];
+    base = p &amp; ~(size - 1);
+    (p' &gt;= base) &amp;&amp; ((p' - base) &lt; size)
+
+    Optimized bounds check
+    ----------------------
+    (p^p') &gt;&gt; table[p &gt;&gt; log_of_slot_size] == 0
+</code></pre>
+
+<ul>
+<li><strong>Trick 5:</strong> Use virtual memory system to prevent out-of-bound 
+derefs: set most significant bit in an OOB pointer,
+and then mark pages in the upper half of the address
+space as inaccessible. So, we don't have to instrument 
+pointer dereferences to prevent bad memory accesses!</li>
+</ul>
+
+<p><strong>Example code</strong> (assume that <code>slot_size=16</code>):</p>
+
+<pre><code>    char *p = malloc(44);     //Note that the nearest power of 2 (i.e.,
+                              //64 bytes) are allocated. So, there are
+                              //64/(slot_size) = 4 bounds table entries
+                              //that are set to log_2(64) = 6.
+
+    char *q = p + 60;         //This access is ok: It's past p's object
+                              //size of 44, but still within the baggy
+                              //bounds of 64.
+    char *r = q + 16;         //r is now at an offset of 60+16=76 from
+                              //p. This means that r is (76-64)=12 bytes
+                              //beyond the end of p. This is more than
+                              //half a slot away, so baggy bounds will
+                              //raise an error.
+
+    char *s = q + 8;          //s is now at an offset of 60+8=68 from p.
+                              //So, s is only 4 bytes beyond the baggy
+                              //bounds, which is les than half a slot
+                              //away. No error is raised, but the OOB
+                              //high-order bit is set in s, so that s
+                              //cannot be dereferenced.
+    char *t = s - 32;         //t is now back inside the bounds, so
+                              //the OOB bit is cleared.
+</code></pre>
+
+<p>For OOB pointers, the high bit is set (if OOB within half a slot).
+  - Typically, OS kernel lives in upper half, protects itself
+   via paging hardware.
+  - <strong>Q:</strong> Why half a slot for out-of-bounds?</p>
+
+<p>So what's the answer to the homework problem?</p>
+
+<pre><code>    char *p = malloc(256);
+    char *q = p + 256;
+    char ch = *q;  // Does this raise an exception?
+                   // Hint: How big is the baggy bound for p?
+</code></pre>
+
+<h4>Baggy bounds paper errata</h4>
+
+<p>Some bugs in the baggy bounds paper:</p>
+
+<ul>
+<li>Figure 3, explicit bounds check should generate
+the size like this:
+<ul>
+<li><code>size = 1 &lt;&lt; table[p &gt;&gt; log_of_slot_size]</code></li>
+</ul></li>
+<li>Figure 3, optimized bounds check should be:
+<ul>
+<li><code>(p^p') &gt;&gt; table[p &gt;&gt; log_of_slot_size] == 0</code></li>
+</ul></li>
+<li>Figures 5 and 18, pointer arithmetic code should
+be either one of the following:
+<ul>
+<li><code>char *p = &amp;buf[i];</code></li>
+<li><code>char *p = buf + i;</code></li>
+</ul></li>
+</ul>

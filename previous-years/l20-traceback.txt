@@ -1,0 +1,170 @@
+Denial of service attacks
+=========================
+
+What kinds of DoS attacks can an adversary mount?
+    Exhaust resources of some service.
+	Network bandwidth.
+	CPU time (e.g., image processing, text searching, etc).
+	Disk bandwidth (e.g., complex SQL queries touching a lot of data).
+	Disk space, memory.
+    Deny service by exploiting some vulnerability in protocol, application.
+	In TCP, if adversary can guess TCP sequence numbers, can send RST.
+	    Terminates TCP connection.
+	In 802.11, deauthenticate packets were (still?) not authenticated.
+	    Adversary can forge deauthenticate packets, disconnect client.
+	In BGP, routers perform little authentication on route announcements.
+	    A year or so ago, Pakistan announced BGP route for Youtube.
+	    In April, China announced BGP routes for many addresses.
+    Poorly-designed or poorly-implemented protocols or apps can be fixed.
+    Resource exhaustion attacks are often harder to fix.
+
+Why do attackers mount DoS attacks?
+    "Spite", but increasingly less so.
+    Extortion.  Force victim to incur cost of defense or downtime.
+    Extortion (used to be?) relatively common for online gambling sites.
+	High-value, time-sensitive, downtime is very costly.
+
+Network bandwidth DoS attacks.
+    Adversary unlikely to directly have overwhelming network bandwidth.
+    Thus, key goal for an adversary is amplification.
+    One way to amplify bandwidth: reflection.
+	Early trick: "smurf", send source-spoofed ICMP ping to broadcast addr.
+	More likely today: source-spoofed UDP DNS queries.
+	Why don't adversaries use TCP services for reflection?
+    Higher-level amplification: compromise machines via malware, form botnet.
+	Most prevalent today, can send well-formed TCP connections.
+	Why are TCP connections more interesting for adversaries?
+	Reflected ICMP, UDP packets much easier to filter out.
+
+CPU time attacks.
+    Complex applications perform large amounts of computation for requests.
+    SSL handshake, PDF generation, Google search, airline ticket searches.
+    High-end DoS attackers do this routinely to incur maximum cost per request.
+
+Disk bandwidth attacks.
+    Disk is often the slowest part of the system (100 seeks per second?)
+    Systems optimized to avoid disk whenever possible: use caches.
+    Caches work due to statistical distributions.
+    Adversary can construct an unlikely distribution, ask for unpopular data.
+    Caches no longer effective, many queries hit disk, system grinds to a halt.
+    Hard to control, predict, or even detect.
+
+Space exhaustion attacks (disk space, memory).
+    Once a user is authenticated, relatively easy to enforce quotas.
+    Many protocols require servers to store state on behalf of unknown clients.
+
+How to defend against DoS attacks in general?
+    Accountability: track down the attacker.
+	Becoming harder to do, at a conceptual level, with botnets, Tor, ..
+    Require authentication to access services.
+	Lowest level (IP) does not provide authentication by default.
+    Require clients to prove they've spent some resources.
+	Might be plausible if adversary's goal is to exhaust server resources.
+	Captchas.
+	Cryptographic puzzles.
+	    Given challenge (C,n) find R so that low n bits of SHA1(C||R) are 0.
+	    Easy to synthesize challenge and verify answer.
+	    Easy to scale up the challenge, if under attack.
+	    Deliver/verify challenge over some protocol not susceptible to DoS.
+	    One slight problem: CPU speeds vary a lot.
+	    More memory-intensive puzzles also exist, might be more fair.
+	Micropayments.
+	    Some "e-stamp" proposals tried, but micropayments are hard.
+	Bandwidth (Speak-up by Mike Walfish).
+	Big problem: adversary can get more resources through botnets.
+
+Specific problem: IP address spoofing.
+    What's the precise problem?
+	Adversary can put any IP address as source when sending packet.
+	Not all networks perform sanity-checks on source IP addresses.
+	Hard for victim to track down who is responsible for the traffic.
+    What resources can adversary exhaust in this manner?
+	Can send arbitrary packets, exhausting bandwidth.
+	Can issue any queries to UDP services (e.g., DNS), exhausting CPU time.
+	Cannot establish fully-open TCP connections (must guess sequence#).
+	Can create half-open TCP conns, exhausting server memory (SYN flood).
+    SYN flood problem: three-way TCP handshake (SYN, SYN-ACK, ACK).
+	Server must keep state about the received SYN and sent SYN-ACK.
+	Needed to figure out what connection the third ACK packet is for.
+    One solution: use cryptography to off-load state onto the client.
+	SYN cookies: encode server-side state into sequence number.
+	    seq = MAC(client & server IPs, ports, timestamp) || timestamp
+	Server computes seq as above when sending SYN-ACK response.
+	Server can verify state is intact by verifying hash (MAC) on ACK's seq.
+	Not quite ideal: need to think about replay attacks within timestamp.
+	Another problem: if third packet lost, noone retransmits.
+	Maybe not a big deal in case of a DoS attack.
+	Only a problem for protocols where server speaks first.
+
+What's the best we can hope for in an IP traceback scheme?
+    No way to authenticate messages from any given router.
+    Goal: suffix of the real attack path.
+    Adversary is free to make up his or her own routers.
+    Infact, this is realistic, since adversary may be an actual ISP.
+    Rely on fact that adversary's packets must repeatedly traverse suffix.
+
+Typical constraints for deploying IP traceback, in order of increasing hardness:
+    Routers are hard to change.
+    Routers cannot do a lot of processing per packet.
+    End-hosts are hard to change.
+    Packets formats are nearly impossible to change.
+
+Manual tracing through the network.
+    1. Find a pattern for the attack packets (e.g., destination address).
+    2. Call up your ISP, ask them to tcpdump and say where packets come from.
+    3. Repeat calling up the next ISP and asking them to do the same.
+    Slow, tedious, non-scalable, hard to get cooperation from far-away ISPs.
+
+Controlled flooding.
+    Clever idea: flood individual links you suspect might be used by attack.
+    See how the flood affects the incoming DoS packets.
+    Potentially works for a single source of attack, but causes DoS by itself.
+
+Ideal packet marking: record every link traversed by a packet.
+    Problem: requires a lot of space in each packet.
+
+Trade-off: record individual links with some probability ("edge sampling").
+    Each packet gets marked with two link endpoints and a distance counter.
+    How do we reconstruct the path from the individual links?
+    How do we decide when to mark a packet?  Small probability.
+    What if the packet is already marked?  Why overwrite?
+    Why do we need a distance counter?
+    Why do we need the two endpoints to each mark the packet with their own IP?
+	Could have one router write down its own IP and the next hop's IP.
+	However, routers have many interfaces, with a separate IP for each.
+	Makes it difficult for end-node machine to piece together route.
+	Don't know when two IPs belong to the same router.
+
+Making edge sampling work in IP packets.
+    Challenge: encoding edge information into IP packet.
+	Ideally, want to store 2 IPs (2 x 32 bits) and distance (8 bits).
+	Authors only found space for 16 bits in the rarely-used fragment ID.
+    Trick 1: Edge IDs.
+	XOR the IPs of neighboring nodes into a single 32-bit edge ID.
+	How much does this save us?
+	How can we reconstruct the path?
+	Start with first hop, keep XORing with increasingly larger distances.
+    Trick 2: Integrity checking scheme to know when we've XORed the right IDs.
+	Potential problem: attack may come from many sources.
+	As a result, XORing with edge-ID of some distance may not be right.
+	Approach: make IPs easy to verify, by bit-interleaving hash of IP.
+	Can validate candidate IP addresses by checking their hash.
+	Doesn't save us space (yet), only increases edge IDs to 64 bits.
+    Trick 3: Break up edge IDs into fragments (e.g., 8 bit chunks of 64 bits).
+	Encoding in the IP header:
+	    3-bit offset (which 8-bit chunk out of 64-bit edge ID).
+	    5-bit distance (up to traceback-enabled 32 hops away).
+	    8-bit data (i.e., a particular fragment of the 64-bit edge ID).
+	How to reconstruct?
+	    Know the right offset for each chunk, and the right distance.
+	    Try all combinations of offsets for given distance to match hash.
+	    Once we know IP address for one hop, move on to the next distance.
+    Trick 4: What happens if the fragment-ID field is in use?
+	Drop fragmented packet with some prob., replace with entire edge info.
+	Probability needed for fragmented packets is less: no matching needed.
+
+How practical is the proposed IP traceback scheme?
+    What happens if not all routers implement this scheme?
+    How do we know when the traceback information stops being a legal suffix?
+    How expensive is it to reconstruct edges from fragments?
+

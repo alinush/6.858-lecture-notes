@@ -1,0 +1,307 @@
+Static analysis
+===============
+
+What's the goal of this paper?
+  Help developers fix vulnerabilities, by finding security bugs in PHP code.
+  Show that static analysis is feasible for PHP.
+
+What kinds of vulnerabilities are they looking for?
+  Unchecked input vulnerabilities: missing sanitization checks.
+  Most specifically, tool targeted at SQL injection.
+    $rows = mysql_query("UPDATE users SET pass='$pass' WHERE userid='$userid'")
+  Authors also claim their approach might work for cross-site scripting.
+    echo "Hello $userid\n";
+  Might work for other cases of unsanitized input.
+    open("/foo/bar/$filename") may be vulnerable to filenames with ".." or "/".
+    eval($_GET['x']).
+
+Example program [bug: missing "not" in check2's if statement]:
+
+  function check($a) {
+    $ok = is_numeric($a);
+    return $ok;
+  }
+
+  function check2($b) {
+    $v = check($b);
+    if ($v) exit;
+    else return;
+  }
+
+  $c = $_GET['x'];
+  check2($c);
+  $q = "xx $c yy";
+  mysql_query($q);
+
+Static analysis goal: understand how some code behaves, given any inputs.
+  In our simple example, can cover all behavior with a few inputs.
+  For large applications, impractical to enumerate possible inputs.
+  Control flow depends on inputs, need to consider all possible paths.
+  Recursive functions, loops, etc make enumeration difficult.
+  Hard to decide some questions statically.
+  E.g., suppose we add this before mysql_query():
+
+    if (sha1($c) != '...') exit();
+
+  Is there an input that hashes to this value and triggers SQL injection?
+  .. hopeless ..
+
+Approach: lose precision but gain scalability.
+  Analyze smaller pieces in detail: typically basic blocks or functions.
+  Summarize interesting aspects of that piece in a concise way.
+  Use the summary when other pieces call this piece.
+  This tool actually applies this summary-based idea at two levels.
+    First analyze basic block, generate BB summary.
+    Then combine BBs in a function, generate function summary.
+    Function summary for the main section/function used to flag errors.
+
+Analyzing check(): only one basic block.
+  How do we figure out what's going on in this function without running it?
+  This tool: simulate execution on "symbolic" values.
+    The current set of symbolic values is denoted with the symbol G (UTF-8: Γ).
+    Maps memory locations (variables, hash table entries) to symbolic values.
+  Initially, each memory location is assigned to initial symbolic value.
+    G = { a -> a0, ok -> ok0 }
+  What happens when $ok=is_numeric($a) "runs" in our simulation?
+    Need to assign some value to the "ok" memory location.
+    No idea what value will be returned.
+    But what we care about is how it might relate to validating input.
+    This tool's model has a special kind of value in simulation: untaint.
+    Symbolic value untaint({x, ..}, {y, ..}) means:
+      If actual value is false, then {x, ..} are all validated.
+      If actual value is true, then {y, ..} are all validated.
+      Still don't know if it's true or false, but will help analysis shortly.
+    "Tainted" means could be a "malicious" value.
+    Simulation also supports "true", "false", and "unknown" (UTF-8: ⊥) bools.
+  Thus, after $ok=is_numeric($a), new state is:
+    G = { a -> a0, ok -> untaint({}, {a0}) }
+    [ Section 3.1.3 suggests it should be location {a} instead of value {a0},
+      but that doesn't make much sense, and step 4 in section 3.3 seems to
+      suggest it should be a value instead of a memory location. ]
+  How does the tool know what is_numeric does?  What is "malicious"?
+    Hard-coded by tool maker / developer for SQL injection.
+    No underlying proof that is_numeric does the right thing.
+    Would similarly hard-code functions that sanitize SQL strings.
+  Return statement finishes basic block, done with BB analysis.
+
+How to summarize check()'s behavior?  [Section 3.2]
+  This tool's function-level summary boils down to <E, R, S, X>:
+  E (error set): memory locations that might flow into an SQL query,
+                 but aren't sanitized in the function itself.
+    For check(), E={}.
+  R (return set): what parameters or global variables might be in retval?
+    For check(), R={}.
+  S (sanitized values): what parameters or global variables are sanitized?
+    Can be conditional on boolean return value, or unconditional.
+    For check(), S={ T => {Arg#1}, F => {} }
+  X (exit): does this function always exit?
+    For check(), X=false.
+
+Analyzing check2(): three basic blocks.
+                            /-> [ exit ]
+  entry -> [ call to check ]
+                            \-> [ return ]
+
+First basic block of check2().
+  Initial: G = { b -> b0, v -> v0 }.
+  Call to check() -- what symbolic value does v get?  [Section 3.3, step 4]
+    Figure out what values are passed as arguments to check(): Arg#1 ==E==> b0
+    Figure out what the sanitized value summary is: S={T=>{Arg#1}, F={}}
+    Plug in arguments into summary, convert to an untaint value:
+      v -> untaint({}, {b0})
+  Two control flow transitions from BB: one to exit, another to return.
+
+How to summarize basic block?
+  Slightly more complex than a function:  [Section 3.1.7]
+  E (error set): memory locations that might flow to SQL query.
+    For check2's first BB, E={}.
+  D (definitions): which memory locations were defined in this BB?
+    For check2's first BB, D={v}.
+  F (value flow): how did this BB move strings between memory locations?
+    For check2's first BB, F={}.
+  T (termination): is there an exit statement?
+    For check2's first BB, T=false.
+  R (return value): what's being returned (if anything)?
+    For check2's first BB, R=undefined.
+  U (untaint set): for each successor BB, what's sanitized?
+    For the exit BB ($v==true): U={b}.
+    For the return BB ($v==false): U={}.
+    [ Or, if we fix bug, vice-versa. ]
+
+What happens in the exit BB?
+  E={}, D={}, F={}, T=true, R=undef, No successors -> no U's.
+
+What happens in the return BB?
+  E={}, D={}, F={}, T=false, R=undef, No successors -> no U's.
+
+How to summarize the check2() function?
+  E={}, R={}, X=false.
+  How to compute S?  [ Section 3.2 step 3 ]
+    Find all return blocks: just the return BB.
+    Find the set of sanitized inputs for that BB (chain of U's from entry).
+    Take intersection.
+  S={* => {}}  [ or, if we fix bug, S={* => {Arg#1}} ]
+
+Finally, what happens in the main function?  One basic block.
+  Initial:     G = { c -> c0, q -> q0, _GET -> _GET0, _GET[x] -> _GET[x]0 }
+  Assign $c:   G = { c -> _GET[x]0, .. }
+  Call check2: use S to mark validated locations.  [ Section 3.3 step 3]
+    If we fix bug, this marks location c's value (_GET[x]0) as validated.
+  Compute $q:  G = { q -> [ 'xx', _GET[x]0, 'yy' ], .. }
+  Call mysql_query: need to ensure that all parts of q's value are validated.
+
+More complicated examples:
+  Suppose we replace check2($c) with check2($_GET['x'])?
+    Works fine: summary for check2 says _GET[x]0 becomes validated.
+
+  What if we replace $c = $_GET['x'] with:  [ Section 3.1.4 ]
+    $d = $_GET;
+    $e = 'x';
+    $c = $d[$e];
+
+    Init:      G = { c -> c0, d -> d0, e -> e0, .. }
+    Assign $d: G = { d -> _GET0, .. }
+    Assign $e: G = { e -> ['x'], .. }
+    Assign $c: G = { c -> _GET[x]0, .. }
+
+  What if we instead use check3('x'):
+    function check3($f) {
+      $b = $_GET[$f];
+      $v = check($b);
+      if (!$v) exit;  # bug fixed
+      else return;
+    }
+
+    Init:      G = { b -> b0, f -> f0, .. }
+    Assign $b: G = { b -> _GET[bottom]0, .. }
+    Check:     G = { v -> untaint({}, {_GET[bottom]0}) }
+    Summary:   S = { * => {_GET[bottom]0} }
+
+    In main function, _GET[bottom]0 marked validated, not _GET[x]0.
+
+  Built-in functions, like substr()?
+    Presumably need to hard-code summaries for them.
+    What would the summary for substr() look like?
+      E={}, R={Arg#1}, S={}, X=false.
+
+What does the tool need to hard-code about SQL injection?
+  Sink sites: mysql_query().
+    What would the summary for mysql_query() look like?
+    E={Arg#1}, R={}, S={}, X=false.
+
+  Sanitization functions: is_numeric(), presumably others.
+    What would the summary for is_numeric() look like?
+      E={}, R={}, S={ T => {Arg#1}, F => {} }, X=false.
+    What would the summary for mysql_escape_string() look like?
+      E={}, R={}, S={}, X=false.
+
+  Source sites: any "external" values that aren't assigned in program code.
+    Flag external inputs from $_GET, $_POST, etc as errors.
+    Others are just warnings -- false positives.
+  Why do they run into external variables other than $_GET, $_POST, etc?
+    Analysis doesn't understand / deal with extract().
+  What about unvalidated values as return values from built-in functions?
+    E.g., read from socket or return from mysql_query()?
+    Paper doesn't say anything about this case.
+    May want to represent return value as unvalidated.
+    Could invent a fake global string variable for this.
+
+Why do they make such a big deal about regexps?
+  Often used for pattern-matching to validate inputs.
+  Their analysis doesn't know ahead of time which regexps validate correctly.
+  For each new regexp, ask user if it validates input properly.
+  Seems like an error-prone step: easy to declare incorrect regexp as correct.
+  Nice example from Utopia News Pro: "[0-9]+" should be "^[0-9]+$".
+
+How well does this work for SQL injection?
+  For 5 applications, 99 error reports (unsanitized $_GET params, etc).
+  Manually checked all 99 error reports, decided they were real bugs.
+  Didn't get acknowledgment from developers if bugs are real or not.
+  Also got 115 warnings for those 5 apps, suggest mostly false positives.
+
+  Other application: PHP-fusion, uses extract() -> no errors, 22 warnings.
+    15 false positives: unvalidated config variables used to construct queries.
+    7 remaining warnings, authors say 6 are real bugs and 1 FP (below).
+    Developer acknowledged and fixed two bugs.  (Unclear what about other 4..)
+
+PHP-fusion false positive example:
+  if (!preg_match("...", $account))
+    $error = 1;
+  if (!$error) { mysql_query("xx $account xx"); }
+
+  Why does this result in a false positive?
+  How could we augment BB summary to handle this correctly?
+
+How would you modify this tool to catch cross-site scripting?
+  Sinks?
+  Sources?
+  Sanitization functions?
+  Current design keeps track of only one kind of sanitization per analysis.
+
+What are the sources of false positives?
+  Tool doesn't understand some sanitization function.
+    (But it does ask when it sees a new regexp.)
+  Tool doesn't understand subtle sanitization / checking plan.
+    Doesn't conform to return value patterns used by this tool.
+    Sources aren't actually malicious (e.g., config file inputs).
+
+What are the sources of false negatives?
+  Code in eval or dynamically-generated PHP filenames.
+  Can't determine array index (e.g., computed at runtime).
+  Recursive functions.
+
+Are these ideas applicable to static analysis for other languages?
+  Python?  Seems reasonably close, fewer implicit conversions.
+  C?  Less string-oriented, hard to distinguish types, aliasing.
+  Java?  Well-defined strings, much stricter than Python.
+    PQL is a similar tool for Java, looks for source-to-sink paths.
+
+Advantages / disadvantages of different approaches to fixing vulnerabilities.
+  Prevent bugs in the first place.
+    Prepared SQL statements: Java example from the paper.
+    Cross-site scripting: HTML templates?
+    Avoid error-prone functions, such as PHP's extract().
+      [ Similar bug affected github: Ruby-on-Rails mass assignment ]
+    Privilege separation might work, but requires significant re-design (lab 2).
+    +: good to prevent bugs when possible.
+    -: programmers may still make mistakes even with less error-prone APIs.
+    -: developers prefer simple APIs, can be hard to combine simple+secure.
+      Lab 2's privilege separation, SQL prepared statements, etc.
+    -: applications evolve, can't always predict developer's needs.
+  Test cases / fuzzing.
+    Good idea but tests cover only situations programmer already thought about.
+    Fuzzing helps but might not trigger bugs that require complex inputs.
+    Might require a lot of time to get coverage.
+  Runtime checking: taint tracking.
+    Potentially fewer false positives than static analysis.
+    Adds runtime overhead.
+    Bugs flagged at runtime may show up for the user, rather than developer.
+    Taint propagation can be too conservative (false alarms = false positives).
+    Taint propagation can be too lax (missed alarms = false negatives).
+  Grep.
+    What if we just "grep mysql_query *.php"?
+  Static analysis.
+    +: no need to run code, might get more coverage than testing / fuzzing.
+    +: can run at development time, help developers fix bugs.
+    +: no runtime overhead in deployment.
+    -: potential for false positives.
+    -: precise analysis impossible in all cases (decidability, halting prob).
+    -: might miss bugs since analysis is not perfectly precise.
+    -: might require some non-trivial time to analyze code.
+
+Are static analysis tools actually used?
+  Doesn't appear that this specific tool got much immediate use.
+    However, the underlying ideas seem pretty good.
+    Other tools use / build on similar techniques.
+    Summary-based analysis is a common approach.
+  Static analysis for C and Java programs pretty common.
+    Linux kernel developers use some static analysis tools (sparse, smatch).
+    Coverity provides commercial static analysis tools.
+    Java static analysis tools are reasonably common.
+      E.g., IBM helps customers find bugs in Java software.
+  Static analyses look for all kinds of bugs.
+    Memory leaks.
+    Buffer overflows in C.
+    Unchecked inputs in Java.
+    Missing access control checks.
+

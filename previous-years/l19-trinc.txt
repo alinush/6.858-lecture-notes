@@ -1,0 +1,244 @@
+Trusted hardware
+================
+
+Administrivia.
+  All labs graded.
+  Final projects: 25+ groups.
+  Two choices (both strictly enforced):
+    4 minutes per group on Wednesday Dec 12, or
+    8 minutes per group split over Monday Dec 10 + Wednesday Dec 12?
+  Vote outcome: 4 minutes per group on Wednesday.
+
+What's the problem this paper is trying to solve?
+  Scenario: suppose we don't trust most parts of some computer system.
+    Controlled by potentially malicious user.
+    Typically distributed system communicating over the Internet.
+    Client machines could be ~arbitrary.
+  Still want to have that system participate in a network protocol.
+    Many examples: BitTorrent clients, DNS servers, shared git repository,
+                   online game participants, ...
+  How can we trust what some system (either client or server) is telling us?
+
+Can we use crypto?
+  Encrypt, sign all data.
+  Untrusted machine can't tamper with data, but can store it, relay it, ..
+  (Almost) works for simple applications like data storage.
+  Doesn't let us reason about what operations the machine is doing.
+    E.g., received a chunk of data, sent some message, etc.
+
+One approach: use a trusted server.
+  All interactions go through this server.
+  Server records what each client did.
+  Just as capable as TrInc, but centralized server can be a bottleneck.
+
+Alternative approach: trust some piece of hardware at the untrusted system.
+  Trusted hardware component will generally sign messages on behalf of system.
+  Trusted hardware constrains the kinds of messages it will sign in some way.
+  Assume adversary can't tamper with trusted hw, it's implemented correctly, ..
+  Construct system around primitive provided by trusted hardware.
+    As long as messages are signed correctly, means system is operating OK.
+
+What should this trusted hardware look like?
+  One version we've already seen: HW determines what code is running on machine.
+    TPM-based approach.
+    Advantages?
+      Quite general, can capture almost any property you might want.
+      TPMs are actually installed in many PCs today.
+    Drawbacks?
+      Large TCB, both in terms of software and hardware.
+      Weak threat model in terms of hardware attacks.
+  Another version: TrInc.
+    More restricted kinds of properties.
+    Just think about network messages from a particular system.
+    Worried about "equivocation".
+    In principle, could check for equivocation without trusted HW.
+    Hard to do in a scalable way -- requires centralized component.
+
+What does TrInc provide?
+  State: Fig 1.
+    K_priv.
+    K_pub.
+    I = H(K_pub), A from manufacturer.
+    Several counters, each with their own count.
+  Hardware is assumed to be tamper-proof.
+    No way to tamper with the trinket's state except via API.
+  API: Fig 2.
+
+What happens when all counters are used up?
+  Hardware has a fixed number of counters.
+  Each hardware counter has both a counter value and an ID.
+  Special counter, M, used to allocate new counter IDs.
+  When counter gets a new ID, its value gets reset to zero.
+
+How do TrInc's counters prevent equivocation?
+  Trinket's <K_pub, counter_id> tuple is the identity for participant.
+  Counter associated with identity cannot be decremented.
+  Can be leveraged to map onto equivocation in the application's protocol.
+
+Why does TrInc allow the counter at the same value?
+  How do you tell if the counter was bumped?
+  Attestation includes old, new value.
+
+Crash recovery.
+  What happens if counter is bumped before the attestation is written to disk?
+  What if attestation is revealed before counter is bumped?
+  How does TrInc deal with both?
+    Write attestation to persistent queue, bump counter, return attestation.
+    Provide an API call to read attestations from the queue.
+    On startup, discard attestations that did not bump the counter.
+
+What's the trust model?
+  Each manufacturer includes a certificate along with each trinket.
+    Certificate signs trinket's ID / public key.
+    Certificate means only a legitimate trinket knows the private key.
+  Certificates only verified by end-users.
+    Authors don't want to prescribe a fixed certificate verification scheme.
+
+Symmetric key crypto.
+  Public-key signatures are slow.
+  TrInc allows associating a symmetric key with a counter.
+    Used to endorse & verify attestations for that counter.
+  Where does the symmetric key come from?
+    Some common party trusted by all participants in that protocol instance.
+    This party verifies every participating trinket's attestation.
+    Generates new symmetric key, encrypts for each trinket's public key.
+  Why not use an arbitrary trinket as the trusted party?
+    Trust model: no single prescribed way to verify a trinket's certificate.
+    There's already a trusted party in many protocols.
+
+TrInc's trinket can be implemented on top of a TPM chip.
+  TPM also provides non-decreasing counters, although somewhat different.
+  Need to use "late launch" functionality: hardware VM support, SKINIT.
+
+What do we need to use TrInc in a protocol?
+  Section 5.1.
+  Figure out what the counter value represents.
+    Should be that equivocation = counter rollback.
+  Figure out what data should be in the attestation.
+    Advance attestation (where counter is bumped).
+    Status attestation (where counter stays the same).
+
+  TrInc can only prevent equivocation (counter rollback) for its principal:
+    <K_pub, counter_id>.
+  Need to also map some application-level principals to TrInc counter names.
+
+Applications of TrInc.
+
+BitTorrent.
+  Problem: peers may want to under-report blocks (why?)
+  Using TrInc in BitTorrent:
+    What's the participant in the system?  TrInc counter, for specific file.
+    What does the counter map to?  Number of blocks received.
+    Algorithm 3 in paper.
+    Why do we need to include received block in attestation?
+      Otherwise adversary could use one attestation for two blocks.
+    How to figure out what blocks a peer has?
+      Send nonce, require fresh TrInc attestation with current bitfield.
+  How can an adversary cheat in TrInc-enabled BitTorrent?
+    Refuse to acknowledge receipt of block.
+    Multiple identities.
+
+Games.
+  Problems: if game is peer-to-peer, hard to know how to trust messages.
+  How do you know if a participant sent different messages to me & others?
+  Centralized server can solve problem, but may be inefficient.
+  Can associate a TrInc counter with each player.
+    Counter value: number of game steps / operations performed.
+    Each attestation must bump counter to the next value.
+    Others should expect monotonically increasing counter values in messages.
+    Adversary cannot send different (valid) messages to two different players.
+  Are there other security problems in a game we could solve with TrInc?
+  What things cannot be solved with TrInc?
+
+E-cash: from last year's quiz.
+  General problem: double-spending.
+  Counter + chain of attestations represents one coin (if counter is at 0).
+  If A wants to give B a coin, first ask B for some counter ID.
+  Then bump A's coin counter from 0 to 1 with message containing B's counter ID.
+  Coin is valid if it was initially issued by the bank,
+    all attestations correspond to a counter going from 0 to 1,
+    and all counter IDs are "correct" (from previous message in chain).
+
+Version control system: better git.
+  Problem: adversarial server could lie about what versions it has.
+  Git already names everything by hash: boils down to getting the right hash.
+  What if we sign all updates, and all clients know about each others' keys?
+    Prevents server from generating its own changes or versions.
+    Cannot generate an arbitrary signed hash.
+    Each client can check that its previous hash is in history of new hash.
+    Forking attack: clients see different but consistent "forks" of server.
+  How can we use TrInc to prevent forking attacks?
+    Server's name is the name of one particular counter <K_pub, counter_id>.
+    Simple plan: counter is number of check-ins in repository.
+      On checkin, server attests to new (signed) hash & length of commit chain.
+      Client waits for attestation of its checkin.
+      Server keeps entire history of attestations for every check-in.
+    To check out repo, client requests this history.
+      Use nonce to get current server-side counter version.
+      Verify that all versions are chained correctly.
+      If check-in happened (client got attested response),
+        that check-in must correspond to some counter#.
+    Can we just record the last signed-hash & history-length in attestaton?
+      Potential problem: server could maintain two hash chains in parallel.
+      Odd counter numbers & even counter numbers correspond to two chains.
+      Server can fork them as long as check-ins can skip counter numbers:
+        client thinks counter was at N, uploads 2 checkins, counter at N+2.
+      Can solve by forcing client to upload each checkin separately.
+      By uploading checkin #N, client claims trinket was OK up to N-1.
+  Of course, critical to agree on specific counter ID for repository.
+
+DNSSEC.
+  Problem: DNS records are signed, but old signed records are still valid.
+  Associate TrInc counter name with DNS server.
+  Simple plan: counter is current version number for all DNS records.
+    Use TrInc as a trusted version number.
+    Drawback: server must re-sign all records with new version number on bump.
+  Alternative plan: git-style version history.
+    Much more expensive for client to do a lookup now.
+  Paper doesn't present an efficient design for how to use TrInc.
+
+PeerReview / AVM.
+  Hybrid of TPM-style trusting code and lighter-weight trusted hardware.
+    Don't check exactly what code runs on untrusted client.
+    Instead, run client software in deterministic virtual machine.
+    Record all possible inputs to VM (keyboard, mouse, interrupts, packets).
+    Another party can now verify whether output network packets were legit,
+      by re-running the entire VM on recorded inputs.
+  Can use TrInc to attest to these inputs.
+    Prevents client from equivocating about what inputs
+      (e.g., keypresses) they performed on application.
+    Protects against variety of attacks on games.
+      Outputs that couldn't have been generated by any legitimate inputs.
+      Incompatible outputs (e.g., equivocation about user input).
+    Cannot protect against introspection of application state.
+    Cannot protect against automated input generators (e.g., bot game players).
+
+Advantages of TrInc compared to TPM-style trusted HW?
+  Small trusted hardware, fewer assumptions about hardware tampering.
+  No assumptions about code correctness (at least at the "untrusted" end).
+  Application guarantees map more directly to properties provided by hw.
+  Can run many applications concurrently, TrInc counters "composable".
+
+Disadvantages of TrInc compared to TPM-style trusted HW?
+  Requires changing application/protocol.
+  Research prototype -- not currently availble in commodity PCs.
+  Only applicable to equivocation-type misbehavior.
+    Cannot reason about internal state.
+  Application may need to provide stronger form of identity.
+    Easy to create multiple identities.
+      Just allocate another TrInc counter in trinket.
+      Or even buy another trinket.
+    Adversary may be able to get its "compromised" clients/counters to collude.
+      E.g., exchange arbitrary blocks w/ each other in BitTorrent.
+    Was this a problem with the TPM?  Adversary could buy multiple TPMs.
+      Yes, to some extent.
+      Adversary could have multiple TPMs, run multiple BitTorrent clients.
+      Harder to precisely control blocks exchanged between his multiple clients.
+      More costly to allocate one TPM per client clone.
+        But also advantage of TrInc: lightweight, supports concurrent apps.
+
+References:
+  http://sparrow.ece.cmu.edu/~adrian/projects/pioneer.pdf
+  http://peerreview.mpi-sws.org/
+  http://www.cis.upenn.edu/~ahae/papers/avm-osdi2010.pdf
+

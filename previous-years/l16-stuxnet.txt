@@ -1,0 +1,225 @@
+Worms and bots: Stuxnet
+=======================
+
+Administrivia.
+    Email your final project proposal to 6.858-staff@pdos.csail.mit.edu.
+    Try to make sure your team can finish project by end of term.
+
+Some context on malware, worms.
+    Most malware today is focused on compromising laptops, desktops
+    Typical malware goals:
+	Run a botnet, to send spam, mount a DDoS attack, ..
+	Steal user information, such as passwords, credit cards, files, ..
+	Monetize by showing ads, selling virus protection, encrypting data.
+
+What do you think of this paper?
+    A detailed dump of information that Symantec learned about stuxnet.
+    Work in progress; requires a lot of background knowledge to understand.
+    Much of the information inferred from reverse-engineering stuxnet code.
+    Requires specialized tools to figure out what Siemens PLC attack is doing.
+    Reverse-engineering malware is tricky: few identifiers, symbols, strings..
+	Most functions identified by their offset in an export table.
+	Logic represented by control flow graphs extracted from disassembly.
+	Some code decrypted and loaded at runtime.
+	Low-level view can make it difficult to see bigger structure / plan.
+
+What's the target of this worm?
+    Compromise an industrial control system.
+    Modify code on programmable logic controller of a Siemens system.
+    Quite different from the bulk of malware today.
+
+What does a target system look like?
+    Based on guesses from stuxnet's code and propagation techniques.
+    Presumably some industrial equipment controlled by several Siemens PLCs.
+    PLCs connected by their own network (Profibus).
+    Some PLCs also connected to Windows PCs running Siemens Step7 software.
+	Step7 software used to program the PLC.
+	PCs may be offline, or could be connected to LAN with WinCC server.
+    WinCC server running Microsoft SQL Server (logging sensor data?).
+    There might be a LAN between some of these machines, with or without WinCC.
+    Some machines might be connected to the Internet (but not necessarily).
+
+What does stuxnet itself look like?
+    1. A single DLL that has many functions to propagate, infect, hide, etc.
+       Includes other libraries, exploits, files used in different stages.
+    2. A data block containing (presumably?) tunable parameters.
+    3. A configuration block containing infection history, timestamp, etc.
+
+Offline propagation via USB drives.
+    1. Exploit bug in shortcut files (kind-of like symlinks, but more complex).
+       "Zero-day" exploit.
+       When the Windows shell tries to display icon for specially-crafted .lnk
+           file, it can be tricked into executing arbitrary code.
+       Stuxnet constructs such .lnk files (different for each Windows version).
+       One caveat: need to quickly mask offending files (including .lnk).
+       Approach: override some functions in Kernel32.dll (like libc).
+
+       Automatically infects new USB drives.
+       Why is infection only propagated if USB drive contains >3 files?
+
+    2. Earlier versions: use autorun mechanism to run stuxnet.
+       "Autorun.inf" config file tells Windows what to run when folder opened.
+       Where do they place the stuxnet binary?  The autorun.inf file itself.
+       Windows config file parser is very forgiving!
+       Can place binary first, config statements later.
+
+Online propagation via WinCC server
+    Database running Microsoft SQL Server.
+    Stuxnet creates a new SQL table, writes its binary to that table.
+    Uses an SQL Server feature to write table to a file on server.
+	Not enabled by default in SQL Server, since it can be misused..
+	Presumably WinCC software enables it for some reason.
+    Then uses file as "stored procedure", causing DB to invoke stuxnet.
+
+Propagation via network shares.
+    Works when another machine is sharing its disk and allows remote jobs.
+    Stuxnet generates an executable, copies it to shared disk.
+    Uses Windows Management Instrumentation (WMI) to schedule a remote job.
+    Remote machine will invoke stuxnet binary after 2 minutes.
+
+Propagation via two remote Windows vulnerabilities.
+    One is a vulnerability in the print spooler.
+    Another is a vulnerability in the Windows SMB server service.
+    Causes arbitrary code to run on a remote machine (but maybe not as admin).
+    Paper doesn't say how stuxnet chooses IPs, but probably randomly in LAN.
+    No need to spread over the Internet in general for stuxnet's goals.
+
+Privilege escalation.
+    Once running code on a machine, need to obtain administrative access.
+    "Local privilege escalation."
+    What do they need higher privileges for?  Hiding, propagating, ..
+    Stuxnet used two "zero-day" vulnerabilities.
+    1. Bug in win32k.sys, didn't check an index into a pointer array.
+       Could arrange for something to be mapped into address space.
+       Then pass a suitably large index that invokes desired function ptr.
+    2. Bug in task scheduler.
+       Details not mentioned because bug has still not been fixed!
+
+Propagation via Step7 project files.
+    Intercept libraries used by Siemens Step7 software to access project files.
+    Construct project file that will load stuxnet when opened later.
+    (Presumably exploits some weakness in how project files are loaded.)
+
+Hiding the intrusion: "rootkit".
+    Goal: prevent user/administrator from noticing the intrusion.
+    Etymology of the term rootkit.
+	Unix system attackers had programs to run once they get root access.
+	Main goal: keep root access as long as possible.
+	Replace programs, libraries, kernel modules to hide attack.
+	Install backdoors to gain access in other ways.
+    Stuxnet uses a file system driver in kernel to intercept file system ops.
+	Intercept "directory query" (equivalent of readdir) operations.
+	Skip files that match filename patterns stuxnet uses on USB drives.
+    How to install a driver into the Windows kernel?
+	Windows requires signed drivers.
+	[ Aside: mostly an enforcement mechanism so hardware manufacturers
+	  have to get their drivers signed, and as a result go through some
+	  QA process that Microsoft has for drivers, since drivers are/were
+	  notoriously buggy. ]
+	Stuxnet included signed device drivers.
+	Compromised certificates.
+	Used to install kernel code without alerting the user.
+	Verisign revoked both certificates soon after they were found.
+	How effective would certificate revocation be for stuxnet's target?
+
+Infecting the PLC.
+    Modify the library used by Siemens Step7 to talk to the PLC.
+    Write routine substitutes different code when writing certain blocks.
+    Read routine returns original code when reading those blocks.
+    Hard to tell the PLC is infected.
+    Modified code appears to be long-term (waits for hours or days).
+    Makes it hard to associate problem with an infected USB drive.
+    Specific function hard to predict, depends on what PLC is doing already.
+
+Behavior blocking.
+    Effectively an access control mechanism introduced by anti-virus tools.
+    Objects are files and registry entries on Windows.
+    Principals are executables (i.e., the binary used to start a process).
+	Many Windows applications run as the same user (with admin privs).
+	Treating executables as principals allows finer-grained protection.
+    Anti-virus intercepts file and registry operations, consults its own ACLs.
+	Watches for certain actions that seem to correlate with malware.
+	Modifying boot sector, system DLLs, system executables.
+	Loading unknown DLLs, network I/O, ..
+    Some defaults included.
+	E.g., lsass.exe, svchost.exe may be allowed to do anything?
+    User prompted when some unexpected operations occur.
+    Not a bullet-proof mechanism: processes not isolated from each other.
+
+Bypassing behavior blocking in Stuxnet.
+    Choose a target executable (e.g., lsass.exe or svchost.exe).
+	Chosen depending on the specific AV software that was installed.
+    Start a new process with target executable in suspended mode.
+    Attach with debugger.
+    Map the stuxnet DLL into process memory.
+    Modify entry code to invoke desired function in stuxnet DLL.
+    Resume process.
+    Anti-virus software believes process is executing in approved binary.
+
+    Remaining problem: some anti-virus tools monitor DLL loading.
+	Stuxnet itself consists of several libraries it needs to load.
+	Workaround: intercept file opening routines in that process.
+	    Copy/map the desired DLL into process memory ahead of time.
+	    Call LoadLibrary() with a special non-existent pathname.
+	Anti-virus sees LoadLibrary, checks file from another process (?)
+	    Presumably no alarm is raised because file does not exist.
+	Intercepted file open routine in stuxnet process returns mapped data.
+	(Exploits fact that AV software performs check from another process?)
+
+Persistence on a single machine.
+    Install one of the signed drivers in the registry, to load on startup.
+    Starts the rest of stuxnet.
+
+Command-and-control system.
+    Uses HTTP to connect to mypremierfutbol.com or todaysfutbol.com.
+    Response can cause stuxnet to execute arbitrary code.
+	No signatures -- easy to take over.  Why didn't they include it?
+    Why the choice of domain names?
+    Why does stuxnet do the HTTP request by injecting into iexplore.exe?
+    Domain flux for command-and-control servers (used by other malware).
+	Generate a new domain name algorithmically every day.
+	When is domain flux useful?  Does it matter for stuxnet?
+
+Peer-to-peer updates.
+    Each stuxnet machine runs a server to help propagate updates.
+    Each stuxnet machine queries other machines nearby for stuxnet version.
+	If remote version is newer, fetch that version and run it locally.
+	If remote version is older, push local version to remote machine.
+    Paper doesn't say how stuxnet finds/probes other IP addresses.
+	Could probably just cycle through IPs on the same LAN.
+	No need to probe random IPs on the Internet.
+    Goal: propagate updates to computers not directly connected to Internet.
+    Looks like updates were propagated, given different versions of stuxnet..
+
+Was stuxnet effective?
+    Evaded detection for a long period of time.
+    Stuxnet becomes well-known around July-September 2010.
+    Some initial versions seen in July 2009.
+    Command-and-control domains registered December 2008, January 2009.
+    Unclear what the real goal was, so hard to say if it "worked".
+    Not the first instance of (attempted) industrial sabotage via software.
+	CIA planted trojaned gas pipeline control software in early 1980s.
+	Stolen by KGB, may be responsible for a significant pipeline explosion.
+	Few details, but not nearly as complex as Stuxnet in propagation.
+
+How to defend against something like Stuxnet?
+    Is Windows inherently more susceptible to such worms?
+    Is Linux any better?
+    How would you detect a worm like stuxnet?
+    How difficult is it to recover from stuxnet?
+    How difficult would it be to develop such malware?
+
+Are there ways in which stuxnet could have been worse?
+    Authors could have made reverse-engineering harder.
+    Cute trick: environmental key generation.
+    Idea: derive key from target system state, encrypt payload with target key.
+    E.g., target system state may be registry key \HKLM\Software\Siemens\Step7.
+    Use two hash functions, H_0 and H_1:
+	A = H_0("\HKLM\Software\Siemens\Step7")
+	B = H_1("\HKLM\Software\Siemens\Step7")
+    Use A as the encryption key for payload, include B in the plaintext code.
+    On a given machine, check registry for all keys, see if H_1(k) matches B.
+    If B matches, then compute H_0(k) to get A and decrypt payload.
+    Without a matching target system, hard to guess correct input to H_1.
+    Can use many environmental factors: nearby 802.11 SSIDs, IP range, ..
+

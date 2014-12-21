@@ -1,0 +1,192 @@
+Looking inside the (drop)box 
+==================
+
+why are we reading this paper?
+  code obfuscation is a common goal in the real world
+     skype,  dropbox
+     gmail
+     malware
+  closed versus open design
+     contrast bitlocker and dropbox client
+
+this paper has several aspects
+  code obfuscation weaknesses
+      focus of this lecture
+  user authentication weaknesses
+      not our focus, technically less interesting
+      automatic login without user credentials fixed (i think)
+ aside: etiquette with finding security flaws
+     report before you publish 
+
+what is Dropbox's goal for obfuscation?
+   don't know, but ...
+   no open-source client
+      dropbox e.g., can change the wire protocol at will
+   make it difficult to for competitors to develop a client 
+      portable fs client is tricky
+
+what is the threat model?
+   adversary has access to obfuscated code and can run it
+   adversary reverse re-engineers client to avoid the above goals
+   sidenote: malware may have additional threats to protect against
+     e.g., make it difficult to fingerprint so that anti-virus application cannot remove malware
+
+challenging threat, because:
+   code must run correctly on adversary's processor
+   code may have to make systems calls
+   code may have to be linked dynamically with host libraries
+   adversary can observe processor and systems calls
+
+general approach: code obfuscation
+    Given a program P, produce O(P)
+    O(P) has same functions as P but a black box
+          there is nothing substantial one can learn from O(P)
+    O(P) isn't much slower than P
+
+minimum requirement: adversary cannot reconstruct P
+    ignore programs that are trivially learnable from excuting w. different inputs
+    easy to avoid complete failure
+       execute only if an input matches some SHA hash
+       hash is embedded in program, but difficult to compute inverse
+    difficult to succeed completely 
+       program prints itself
+    in general: impossible (see references)
+       there is a family of interesting programs for which O(P) will fail [see references]
+    but, perhaps you could do well on a particular program
+    difficult to state a precise requirements for an obfuscator
+       should be skeptical that it can work in practice against skilled adversary
+
+code obfuscation in practice
+     write C programs from which is difficult to tell what they do
+         down-side: hard on developer
+	 but makes for great contests (e.g., International Obfuscated C Code Contest[)
+    use an obfuscator
+       Takes a program as input and produces a intermediate code
+	   You don't want to ship the original source code
+       Ship program in intermediate form with interpreter to computer
+  	   You don't want to ship the actual assembly
+	   Can cook up your own intermediate language that nobody knows
+       Computer runs interpreter, which interprets intermediate code
+	   Interpreter reads input and outputs values
+	   The interpreter can try to hide what is actual computing
+	       Fake instructions, fake control
+	       Use inputs as index into a fine state machine and spit out values
+	       Etc.
+
+dropbox's approach
+   all code is written in python
+       compiles programs to bytecode
+       interpreter executes bytecode
+   dropbox application
+       contains encrypted python byte code
+          encryption method is changed often
+       byte code opcodes are different than Python
+       contains a special interpreter
+       application is built/packaged in non-standard way
+           special "linker"
+
+dynamic linking
+   what are the .so files in the downloaded dropbox directory?
+      dynamically-linkable libraries
+   modern applications are not a single file
+   when application runs and unresolved references are resolved at runtime
+      e.g., application makes a system call
+      dynamic linker links the application with the library with system call stubs
+   adv: library is only once in memory
+      with static linking: library would be N times in memory
+      once with each application
+  LD_PRELOAD: insert your own library in front of others
+  dropbox ships its app with several libraries that are dynamically linked
+      but interpreter and SSL are statically linked
+    
+goal of paper: *automatically* break obfuscation (de-drop)
+  another goal: break user authentication
+  demo:
+    look at dropbox binary
+    ls: no pyc files
+    gdb binary
+    nm binary
+    objdump -S binary
+
+    run dropboxd with LD preload
+     extracts pyc_decrypted
+    cd pyc_decrypted/client_api
+    python
+      import hashing
+      dir (hashing)
+   run uncompyle2 hashing.pyc
+
+Paper: how to de-crypt pyc files?
+  study modified python interpreter
+      diffed Python27.ddl from dropbox with standard
+  r_object is patched
+     decrypt decrypts bytecode
+  how to extract encrypted bytecode?
+     inject code into dropbox binary using LD_PRELOAD
+     injected code overwrites strlen
+         when strlen is called by dropbox, injected code runs
+     inject Python code using PyRun_SimpleString 
+       not patched
+       can run arbitrary python code in dropbox context
+         GIL must be acquired by injected code
+     call PyMarshal_ReadLastObjectFromFile()
+         reads encrypted pyc into memory
+	    but, co_code is not exposed to Python!
+            linear memory search to find co_code
+	 serialize it back to a file
+	    but, marshal.dumps is NOP
+	    inject PyPy's _marshal.py
+              written in python!
+
+How to remap opcodes?
+   manual reconstruct opcode mapping
+      time intensive, but opcode hasn't changed since 1.6.0
+   frequency analysis for common modules
+     decrypted dropbox bytecode 
+     standard bytecode
+
+How to get user credentials?
+   hostid are used for authentication
+      established during registration
+         not affected by changing password!
+      stored in encrypted sql database
+         components of decryption key are stored on device
+         linux: custom obfuscator
+         except host_int comes from server
+   Can also be extracted from dropbox client logs
+      enable logging based MD5 checksum of "DBDEV"
+      md5("a2y6shaya") = "c3da6009e4"
+      patched now.
+  Snooping on objects, looking for host_id and host_int
+  Login to web site for logintray is based only on host_id and host_int
+     Dropbox uses now "better" logintray ...
+     Dropbox should probably use SRP (or something else good)
+
+How to learn what dropbox internal APIs are?
+   Patch all SSL objects, every second
+       "monkey patch"  == dynamic modifications of a class at runtime without
+            modifying the original source code
+        maybe derived from guerrilla (as in an sneaky attack) patch?
+   No two-factor authentication for access to drop-box account
+   One use: open-source client
+
+Is the dropbox obfuscation the best you can do?
+   No.
+   How could you do better?  
+      Hide instructions much better
+      Obscure control flow
+   But, is it worth it?
+
+Closed versus open design
+   Downside of closed designs
+      easy to miss assumptions because right eyes don't  look at it
+   Downside of open design
+      you competitor has access to it too
+   Ideal case: minimal secret, make most of design open
+      maybe not always possible to make the secret small?
+
+References
+    http://www.math.ias.edu/~boaz/Papers/obfuscate.ps
+    http://www.math.ias.edu/~boaz/Papers/obf_informal.html
+    https://github.com/kholia/dedrop
+    uncompyle2 https://github.com/wibiti/uncompyle2

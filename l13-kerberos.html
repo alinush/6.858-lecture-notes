@@ -1,0 +1,454 @@
+<h1>Kerberos</h1>
+
+<h2>Kerberos setting</h2>
+
+<ul>
+<li>Distributed architecture, evolved from a single time-sharing system.</li>
+<li>Many servers providing services: remote login, mail, printing, file server.</li>
+<li>Many workstations, some are public, some are private.</li>
+<li>Each user logs into their own workstation, has root access.</li>
+<li>Adversary may have his/her own workstation too.</li>
+<li>Alternatives at the time: rlogin, rsh.</li>
+<li>Goal: allow users to access services, by authenticating to servers.</li>
+<li>Other user information distributed via Hesiod, LDAP, or some other directory.</li>
+<li>Widely used: Microsoft Active Directory uses the Kerberos (v5) protocol.</li>
+</ul>
+
+<h2>What's the trust model?</h2>
+
+<ul>
+<li>All users, clients, servers trust the Kerberos server.</li>
+<li>No apriori trust between any other pairs of machines.</li>
+<li>Network is not trusted.</li>
+<li>User trusts the local machine.</li>
+</ul>
+
+<h2>Kerberos architecture</h2>
+
+<ul>
+<li>Central Kerberos server, trusted by all parties (or at least all at MIT).</li>
+<li>Users, servers have a private key shared between them and Kerberos.</li>
+<li>Kerberos server keeps track of everyone's private key.</li>
+<li>Kerberos uses keys to achieve mutual <em>authentication</em> between client, server.
+<ul>
+<li>Terminology: user, client, server.</li>
+<li>Client and server know each other's names.</li>
+<li>Client is convinced it's talking to server and vice-versa.</li>
+</ul></li>
+<li>Kerberos does not provide authorization (can user access some resource).
+<ul>
+<li>It's the application's job to decide this.</li>
+</ul></li>
+</ul>
+
+<p>Why do we need this trusted Kerberos server?</p>
+
+<ul>
+<li>Users don't need to set up accounts, passwords, etc on each server.</li>
+</ul>
+
+<h2>Overall architecture diagram</h2>
+
+<pre><code>                                 +-----------------------+
+                  c, tgs         |                       |
+  [ User: Kc ]  &lt;--------&gt;  [ Kerberos ]                 |
+       ^      \                  |           Database:   |
+       |       \                 |             c: Kc     |
+       V        \    s           |             s: Ks     |
+ [ Server: Ks ]  \--------&gt;   [ TGS ]                    |
+                                 |         KDC           |
+                                 +-----------------------+
+</code></pre>
+
+<h2>Kerberos constructs</h2>
+
+<p>Basic Kerberos constructs from the paper:</p>
+
+<ul>
+<li><strong>Ticket</strong>, <code>T_{c,s} = { s, c, addr, timestamp, life, K_{c,s} }</code>
+<ul>
+<li>usually encrypted w/ <code>K_s</code></li>
+</ul></li>
+<li><strong>Authenticator</strong>, <code>A_c = { c, addr, timestamp }</code>
+<ul>
+<li>usually encrypted w/ <code>K_{c,s}</code></li>
+</ul></li>
+</ul>
+
+<p>Kerberos protocol mechanics:</p>
+
+<ul>
+<li>Two interfaces to the Kerberos database: "Kerberos" and "TGS" protocols.</li>
+<li>Quite similar; few differences:
+<ul>
+<li>In Kerberos protocol, can specify any <code>c</code>, <code>s</code>; client must know <code>K_c</code>.</li>
+<li>In TGS protocol, client's name is implicit (from ticket).</li>
+<li>Client just needs to know <code>K_{c,tgs}</code> to decrypt response (not <code>K_c</code>).</li>
+</ul></li>
+<li>Where does the client machine get <code>K_c</code> in the first place?
+<ul>
+<li>For users, derived from a password using, effectively, a hash function.</li>
+</ul></li>
+<li>Why do we need these two protocols?  Why not just use "Kerberos" protocol?
+<ul>
+<li><strong>Client machine can forget user password after it gets TGS ticket.</strong></li>
+<li>Can we just store <code>K_c</code> and forget the user password?  Password-equivalent.</li>
+</ul></li>
+</ul>
+
+<p>Naming</p>
+
+<ul>
+<li>Critical to Kerberos: mapping between keys and principal names.</li>
+<li>Each principal name consists of <code>( name, instance, realm )</code>
+<ul>
+<li>Typically written <code>name.instance@realm</code></li>
+</ul></li>
+<li>What entities have principals?
+<ul>
+<li>Users: name is username, instance for special privileges (by convention).</li>
+<li>Servers: name is service name, instance is server's hostname.</li>
+<li>TGS: name is 'krbtgt', instance is realm name.</li>
+</ul></li>
+<li>Where are these names used / where do the names matter?
+<ul>
+<li>Users remember their user name.</li>
+<li>Servers perform access control based on principal name.</li>
+<li>Clients choose a principal they expect to be talking to.
+<ul>
+<li>Similar to browsers expecting specific certificate name for HTTPS</li>
+</ul></li>
+</ul></li>
+<li>When can a name be reused?
+<ul>
+<li>For user names: ensure no ACL contains that name, difficult.</li>
+<li>For servers (assuming not on any ACL): ensure users forget server name.</li>
+<li>Must change the key, to ensure old tickets not valid for new server.</li>
+</ul></li>
+</ul>
+
+<h2>Getting the initial ticket: "Kerberos" protocol</h2>
+
+<ul>
+<li>Client sends pair of principal names <code>(c, s)</code>, where <code>s</code> is typically <code>tgs</code>.</li>
+<li>Server responds with <code>{ K_{c,s}, { T_{c,s} }_{K_s} }_{K_c}</code></li>
+<li>How does the Kerberos server authenticate the client?
+<ul>
+<li>Doesn't need to -- willing to respond to any request.</li>
+</ul></li>
+<li>How does the client authenticate the Kerberos server?
+<ul>
+<li>Decrypt the response and check if the ticket looks valid.</li>
+<li>Only the Kerberos server would know <code>K_c</code>.</li>
+</ul></li>
+<li>In what ways is this better/worse than sending password to server?
+<ul>
+<li>Password doesn't get sent over network, but easier to brute-force.</li>
+</ul></li>
+<li>Why is the key included twice in the response from Kerberos/TGS server?
+<ul>
+<li><code>K_{c,s}</code> in response gives the client access to this shared key.</li>
+<li><code>K_{c,s}</code> in the ticket should convince server the key is legitimate.</li>
+</ul></li>
+</ul>
+
+<p><strong>General weakness:</strong> Kerberos 4 assumed encryption provides message integrity.</p>
+
+<ul>
+<li>There were some attacks where adversary can tamper with ciphertext.</li>
+<li>No explicit MAC means that no well-defined way to detect tampering.</li>
+<li>One-off solutions: kprop protocol included checksum, hard to match.</li>
+<li>The weakness made it relatively easy for adversary to "mint" tickets.
+<ul>
+<li>Ref: http://web.mit.edu/kerberos/advisories/MITKRB5-SA-2003-004-krb4.txt </li>
+</ul></li>
+</ul>
+
+<p><strong>General weakness:</strong> adversary can mount offline password-guessing attacks.</p>
+
+<ul>
+<li>Typical passwords don't have a lot of entropy.</li>
+<li>Anyone can ask KDC for a ticket encrypted with user's password.</li>
+<li>Then try to brute-force the user's password offline: easy to parallelize.</li>
+<li>Better design: require client to interact with server for each login attempt.</li>
+</ul>
+
+<p><strong>General weakness:</strong> DES hard-coded into the design, packet format.</p>
+
+<ul>
+<li>Difficult to switch to another cryptosystem when DES became too weak.</li>
+<li>DES key space is too small: keys are only 56 bits, 2^56 is not that big.</li>
+<li>Cheap to break DES these days ($20--$200 via https://www.cloudcracker.com/).</li>
+<li>How could an adversary break Kerberos give this weakness?</li>
+</ul>
+
+<h2>Authenticating to a server: "TGS" protocol</h2>
+
+<ul>
+<li>Client sends <code>( s, {T_{c,tgs}}_{K_tgs}, {A_c}_{K_{c,tgs}} )</code></li>
+<li>Server replies with <code>{ K_{c,s}, { T_{c,s} }_{K_s} }_{K_{c,tgs}}</code></li>
+<li>How does a server authenticate a client based on the ticket?
+<ul>
+<li>Decrypt ticket using server's key.</li>
+<li>Decrypt authenticator using <code>K_{c,s}</code>.</li>
+<li>Only Kerberos server could have generated ticket (knew <code>K_s</code>).</li>
+<li>Only client could have generated authenticator (knew <code>K_{c,s}</code>).</li>
+</ul></li>
+<li>Why does the ticket include <code>c</code>? <code>s</code>? <code>addr</code>?<code>life</code>?
+<ul>
+<li>Server can extract client's principal name from ticket.</li>
+<li>Addr tries to prevent stolen ticket from being used on another machine.</li>
+<li>Lifetime similarly tries to limit damage from stolen ticket.</li>
+</ul></li>
+<li>How does a network protocol use Kerberos?
+<ul>
+<li>Encrypt/authenticate all messages with <code>K_{c,s}</code></li>
+<li>Mail server commands, documents sent to printer, shell I/O, ..</li>
+<li>E.g., "DELETE 5" in a mail server protocol.</li>
+</ul></li>
+<li>Who generates the authenticator?
+<ul>
+<li>Client, for each new connection.</li>
+</ul></li>
+<li>Why does a client need to send an authenticator, in addition to the ticket?
+<ul>
+<li>Prove to the server that an adversary is not replaying an old message.</li>
+<li>Server must keep last few authenticators in memory, to detect replays.</li>
+</ul></li>
+<li>How does Kerberos use time? What happens if the clock is wrong?
+<ul>
+<li>Prevent stolen tickets from being used forever.</li>
+<li>Bound size of replay cache.</li>
+<li>If clock is wrong, adversary can use old tickets or replay messages.</li>
+</ul></li>
+<li>How does client authenticate server? Why would it matter?
+<ul>
+<li>Connecting to file server: want to know you're getting legitimate files.</li>
+<li>Solution: server can send back <code>{ timestamp + 1 }_{K_{c,s}}</code> after it receives
+ticket and authenticator from client</li>
+</ul></li>
+</ul>
+
+<p><strong>General weakness:</strong> same key, <code>K_{c,s}</code>, used for many things</p>
+
+<ul>
+<li>Adversary can substitute any msg encrypted with <code>K_{c,s}</code> for any other.</li>
+<li>Example: messages across multiple sessions.
+<ul>
+<li>Authenticator does not attest to <code>K_{c,s}</code> being fresh!</li>
+<li>Adversary can splice fresh authenticator with old message</li>
+<li>Kerberos v5 uses fresh session key each time, sent in authenticator</li>
+</ul></li>
+<li>Example: messages in different directions
+<ul>
+<li>Kerberos v4 included a direction flag in packets <code>(c-&gt;s or s-&gt;c)</code></li>
+<li>Kerberos v5 used separate keys: <code>K_{c-&gt;s}, K_{s-&gt;c}</code></li>
+</ul></li>
+</ul>
+
+<p>What if users connects to wrong server (analogue of MITM / phishing attack)?</p>
+
+<ul>
+<li>If server is intercepting packets, learns what service user connects to.</li>
+<li>What if user accidentally types ssh malicious.server?
+<ul>
+<li>Server learns user's principal name.</li>
+<li>Server does not get user's TGS ticket or <code>K_c</code>.</li>
+<li>Cannot impersonate user to others.</li>
+</ul></li>
+</ul>
+
+<p>What happens if the KDC is down?</p>
+
+<ul>
+<li>Cannot log in.</li>
+<li>Cannot obtain new tickets.</li>
+<li>Can keep using existing tickets.</li>
+</ul>
+
+<p>Authenticating to a Unix system.</p>
+
+<ul>
+<li>No Kerberos protocol involved when accessing local files, processes.</li>
+<li>If logging in using Kerberos, user must have presented legitimate ticket.</li>
+<li>What if user logs in using username/password (locally or via SSH using pw)?
+<ul>
+<li>User knows whether the password he/she supplied is legitimate.</li>
+<li>Server has no idea.</li>
+</ul></li>
+<li>Potential attack on a server:
+<ul>
+<li>User connects via SSH, types in username, password.</li>
+<li>Create legitimate-looking Kerberos response, encrypted with password.</li>
+<li>Server has no way to tell if this response is really legitimate.</li>
+</ul></li>
+<li>Solution (if server keeps state): server needs its own principal, key.
+<ul>
+<li>First obtain user's TGS, using the user's username and password.</li>
+<li>Then use TGS to obtain a ticket for server's principal.</li>
+<li>If user faked the Kerberos server, the second ticket will not match.</li>
+</ul></li>
+</ul>
+
+<p>Using Kerberos in an application.</p>
+
+<ul>
+<li>Paper suggests using special functions to seal messages, 3 security levels.</li>
+<li>Requires moderate changes to an application.
+<ul>
+<li>Good for flexibility, performance.</li>
+<li>Bad for ease of adoption.</li>
+<li>Hard for developers to understand subtle security guarantees.</li>
+</ul></li>
+<li>Perhaps a better abstraction: secure channel (SSL/TLS).</li>
+</ul>
+
+<h2>Password-changing service (administrative interface)</h2>
+
+<ul>
+<li>How does the Kerberos protocol ensure that client knows password?  Why?
+<ul>
+<li>Special flag in ticket indicates which interface was used to obtain it.</li>
+<li>Password-changing service only accepts tickets obtained by using <code>K_c</code>.</li>
+<li>Ensure that client knows old password, doesn't just have the ticket.</li>
+</ul></li>
+<li>How does the client change the user's password?
+<ul>
+<li>Connect to password-changing service, send new password to server.</li>
+</ul></li>
+</ul>
+
+<h2>Replication</h2>
+
+<ul>
+<li>One master server (supports password changes), zero or more slaves.</li>
+<li>All servers can issue tickets, only master can change keys.</li>
+<li>Why this split?
+<ul>
+<li>Only one master ensures consistency: cannot have conflicting changes.</li>
+</ul></li>
+<li>Master periodically updates the slaves (when paper was written, ~once/hour).
+<ul>
+<li>More recent impls have incremental propagation: lower latency (but not 0).</li>
+</ul></li>
+<li>How scalable is this?
+<ul>
+<li>Symmetric crypto (DES, AES) is fast -- O(100MB/sec) on current hardware.</li>
+<li>Tickets are small, O(100 bytes), so can support 1M tickets/second.</li>
+<li>Easy to scale by adding slaves.</li>
+</ul></li>
+<li>Potential problem: password changes take a while to propagate.</li>
+<li>Adversary can still use a stolen password for a while after user changes it.</li>
+<li>To learn more about how to do replication right, take 6.824.</li>
+</ul>
+
+<h2>Security of the Kerberos database</h2>
+
+<ul>
+<li>Master and slave servers are highly sensitive in this design.</li>
+<li>Compromised master/slave server means all passwords/keys have to change.</li>
+<li>Must be physically secure, no bugs in Kerberos server software,
+no bugs in any other network service on server machines, etc.</li>
+<li>Can we do better?  SSL CA infrastructure slightly better, but not much.
+<ul>
+<li>Will look at it in more detail when we talk about browser security / HTTPS.</li>
+</ul></li>
+<li>Most centralized authentication systems suffer from such problems.
+.. &amp; globally-unique freeform names require some trusted mapping authority.</li>
+</ul>
+
+<p>Why didn't Kerberos use public key crypto?</p>
+
+<ul>
+<li>Too slow at the time: VAX systems, 10MHz clocks.</li>
+<li>Government export restrictions.</li>
+<li>Patents.</li>
+</ul>
+
+<p>Network attacks.</p>
+
+<ul>
+<li>Offline password guessing attacks on Kerberos server.
+<ul>
+<li>Kerberos v5 prevents clients from requesting ticket for any principal.</li>
+<li>Must include <code>{ timestamp }_{K_c} along with request, proves know K_c.</code></li>
+<li>Still vulnerable to password guessing by network sniffer at that time.</li>
+<li>Better alternatives are available: SRP, PAKE.</li>
+</ul></li>
+<li>What can adversary do with a stolen ticket?</li>
+<li>What can adversary do with a stolen <code>K_c</code>?</li>
+<li>What can adversary do with a stolen <code>K_s</code>?
+<ul>
+<li>Remember: two parties share each key (and rely on it) in Kerberos!</li>
+</ul></li>
+<li>What happens after a password change if <code>K_c</code> is compromised?
+<ul>
+<li>Can decrypt all subsequent exchanges, starting with initial ticket</li>
+<li>Can even decrypt password change requests, getting the new password!</li>
+</ul></li>
+<li>What if adversary figures out your old password sometime later?
+<ul>
+<li>If the adversary saved old packets, can decrypt everything.</li>
+<li>Can similarly obtain current password.</li>
+</ul></li>
+</ul>
+
+<p>Forward secrecy (avoiding the password-change problem).</p>
+
+<ul>
+<li>Abstract problem: establish a shared secret between two parties.</li>
+<li>Kerberos approach: someone picks the secret, encrypts it, and sends it.</li>
+<li>Weakness: if the encryption key is stolen, can get the secret later.</li>
+<li>Diffie-Hellman key exchange protocol:
+<ul>
+<li>Two parties pick their own parts of a secret.</li>
+<li>Send messages to each other.</li>
+<li>Messages do not have to be secret, just authenticated (no tampering).</li>
+<li>Two parties use each other's messages to reconstruct shared key.</li>
+<li>Adversary cannot reconstruct key by watching network messages.</li>
+</ul></li>
+<li>Diffie-Hellman details:
+<ul>
+<li>Prime p, generator g mod p.</li>
+<li>Alice and Bob each pick a random, secret exponent (a and b).</li>
+<li>Alice and Bob send (g^a mod p) and (g^b mod p) to each other.</li>
+<li>Each party computes (g^(ab) mod p) = (g^a^b mod p) = (g^b^a mod p).</li>
+<li>Use (g^(ab) mod p) as secret key.</li>
+<li>Assume discrete log (recovering a from (g^a mod p)) is hard.</li>
+</ul></li>
+</ul>
+
+<p>Cross-realm in Kerberos.</p>
+
+<ul>
+<li>Shared keys between realms.</li>
+<li>Kerberos v4 only supported pairwise cross-realm (no transiting).</li>
+</ul>
+
+<p>What doesn't Kerberos address?</p>
+
+<ul>
+<li>Client, server, or KDC machine can be compromised.</li>
+<li>Access control or groups (up to service to implement that).</li>
+<li>Microsoft "extended" Kerberos to support groups.
+<ul>
+<li>Effectively the user's list of groups was included in ticket.</li>
+</ul></li>
+<li>Proxy problem: still no great solution in Kerberos, but ssh-agent is nice.</li>
+<li>Workstation security (can trojan login, and did happen in practice).
+<ul>
+<li>Smartcard-based approach hasn't taken off.</li>
+<li>Two-step authentication (time-based OTP) used by Google Authenticator.</li>
+<li>Shared desktop systems not so prevalent: everyone has own phone, laptop, ..</li>
+</ul></li>
+</ul>
+
+<p>Follow-ons.</p>
+
+<ul>
+<li>Kerberos v5 fixes many problems in v4 (some mentioned), used widely (MS AD).</li>
+<li>OpenID is a similar-looking protocol for authentication in web applications.
+<ul>
+<li>Similar messages are passed around via HTTP requests.</li>
+</ul></li>
+</ul>

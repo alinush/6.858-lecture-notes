@@ -1,0 +1,478 @@
+<h1>OKWS</h1>
+
+<p>Today's lecture: how to build a secure web server on Unix.
+The design of our lab web server, zookws, is inspired by OKWS.</p>
+
+<h2>Privilege separation</h2>
+
+<ul>
+<li>Big security idea</li>
+<li>Split system into modules, each with their own privilege
+<ul>
+<li><strong>Idea:</strong> if one module is compromised, then other modules won't be</li>
+</ul></li>
+<li>Use often:
+<ul>
+<li>Virtual machines (e.g., run web site in its own virtual machine)</li>
+<li>SSH (seperates sshd, agent)</li>
+</ul></li>
+<li>Challenges:
+<ul>
+<li>Modules need to share</li>
+<li>Need OS support</li>
+<li>Need to use OS carefully to set things up correctly</li>
+<li>Performance</li>
+</ul></li>
+</ul>
+
+<h2>OKWS</h2>
+
+<ul>
+<li>Interesting case study of privilege separation
+<ul>
+<li>Lots of sharing between services
+<ul>
+<li>Strict partitioning doesn't work</li>
+</ul></li>
+<li>Lots of code </li>
+</ul></li>
+<li>Not widely used outside of OKcupid
+<ul>
+<li>Many web sites have their privilege separation plan</li>
+<li>But no papers describing their plans</li>
+</ul></li>
+</ul>
+
+<h3>Background: security and protection in Unix</h3>
+
+<ul>
+<li>Typical principals: user IDs, group IDs (32-bit integers).
+<ul>
+<li>Each process has a user ID (uid), and a list of group IDs (gid + grouplist).</li>
+<li>For mostly-historical reasons, a process has a gid + extra grouplist.</li>
+<li>Superuser principal (root) represented by <code>uid=0</code>, bypasses most checks.</li>
+</ul></li>
+<li>What are the objects + ops in Unix, and how does the OS do access control?
+<ul>
+<li>Files, directories.
+<ul>
+<li>File operations: read, write, execute, change perms, ..</li>
+<li>Directory operations: lookup, create, remove, rename, change perms, ..</li>
+<li>Each inode has an owner user and group.</li>
+<li>Each inode has read, write, execute perms for user, group, others.</li>
+<li>Typically represented as a bit vector written base 8 (octal);
+<ul>
+<li>octal works well because each digit is 3 bits (read, write, exec).</li>
+</ul></li>
+<li>Who can change permissions on files? 
+<ul>
+<li>Only user owner (process UID).</li>
+</ul></li>
+<li>Hard link to file: need write permission to file.
+<ul>
+<li>Possible rationale: quotas.</li>
+<li>Possible rationale: prevent hard-linking <code>/etc/passwd</code> to <code>/var/mail/root</code> with a world-writable <code>/var/mail</code>.</li>
+</ul></li>
+<li>Execute for directory means being able to lookup names (but not ls).</li>
+<li>Checks for process opening file <code>/etc/passwd</code>:
+<ul>
+<li>Must be able to look up <code>'etc'</code> in <code>/</code>, <code>'passwd'</code> in <code>/etc</code>.</li>
+<li>Must be able to open <code>/etc/passwd</code> (read or read-write).</li>
+</ul></li>
+<li>Suppose you want file readable to intersection of group1 and group2.
+<ul>
+<li>Is it possible to implement this in Unix?</li>
+</ul></li>
+</ul></li>
+<li>File descriptors.
+<ul>
+<li>File access control checks performed at file open.</li>
+<li>Once process has an open file descriptor, can continue accessing.</li>
+<li>Processes can pass file descriptors (via Unix domain sockets).</li>
+</ul></li>
+<li>Processes.
+<ul>
+<li>What can you do to a process?
+<ul>
+<li>Debug (ptrace), send signal, wait for exit &amp; get status,</li>
+</ul></li>
+<li>Debugging, sending signals: must have same UID (almost).
+<ul>
+<li>Various exceptions, this gets tricky in practice.</li>
+</ul></li>
+<li>Waiting / getting exit status: must be parent of that process.</li>
+</ul></li>
+<li>Memory.
+<ul>
+<li>One process cannot generally name memory in another process.</li>
+<li>Exception: debug mechanisms.</li>
+<li>Exception: memory-mapped files.</li>
+</ul></li>
+<li>Networking.
+<ul>
+<li>Operations.
+<ul>
+<li>Bind to a port.</li>
+<li>Connect to some address.</li>
+<li>Read/write a connection.</li>
+<li>Send/receive raw packets.</li>
+</ul></li>
+<li>Rules:
+<ul>
+<li>only root (UID 0) can bind to ports below 1024;</li>
+<li>(e.g., arbitrary user cannot run a web server on port 80.)</li>
+<li>only root can send/receive raw packets.</li>
+<li>any process can connect to any address.</li>
+<li>can only read/write data on connection that a process has an fd for.</li>
+</ul></li>
+<li>Additionally, firewall imposes its own checks, unrelated to processes.</li>
+</ul></li>
+</ul></li>
+<li>How does the principal of a process get set?
+<ul>
+<li>System calls: <code>setuid()</code>, <code>setgid()</code>, <code>setgroups()</code>.</li>
+<li>Only root (UID 0) can call these system calls (to first approximation).</li>
+</ul></li>
+<li>Where does the user ID, group ID list come from?
+<ul>
+<li>On a typical Unix system, login program runs as root (UID 0)</li>
+<li>Checks supplied user password against <code>/etc/shadow</code>.</li>
+<li>Finds user's UID based on <code>/etc/passwd</code>.</li>
+<li>Finds user's groups based on <code>/etc/group</code>.</li>
+<li>Calls <code>setuid()</code>, <code>setgid()</code>, <code>setgroups()</code> before running user's shell</li>
+</ul></li>
+<li>How do you regain privileges after switching to a non-root user?
+<ul>
+<li>Could use file descriptor passing (but have to write specialized code)</li>
+<li>Kernel mechanism: <em>setuid/setgid binaries</em>.
+<ul>
+<li>When the binary is executed, set process UID or GID to binary owner.</li>
+<li>Specified with a special bit in the file's permissions.</li>
+<li>For example, <code>su</code> / <code>sudo</code> binaries are typically setuid root.</li>
+<li>Even if your shell is not root, can run <code>"su otheruser"</code></li>
+<li><code>su</code> process will check passwd, run shell as <code>otheruser</code> if OK.</li>
+<li>Many such programs on Unix, since root privileges often needed.</li>
+</ul></li>
+<li>Why might setuid-binaries be a bad idea, security-wise?
+<ul>
+<li>Many ways for adversary (caller of binary) to manipulate process.</li>
+<li>In Unix, exec'ed process inherits environment vars, file descriptors, ..</li>
+<li>Libraries that a setuid program might use not sufficiently paranoid</li>
+<li>Historically, many vulnerabilities (e.g. pass <code>$LD_PRELOAD</code>, ..)</li>
+</ul></li>
+</ul></li>
+<li>How to prevent a malicious program from exploiting setuid-root binaries?
+<ul>
+<li>Kernel mechanism: <em>chroot</em>
+<ul>
+<li>Changes what '/' means when opening files by path name.</li>
+<li>Cannot name files (e.g. setuid binaries) outside chroot tree.</li>
+</ul></li>
+<li>For example, OKWS uses chroot to restrict programs to <code>/var/okws/run</code>, ..</li>
+<li>Kernel also ensures that '/../' does not allow escape from chroot.</li>
+<li>Why chroot only allowed for root?
+<ul>
+<li>setuid binaries (like <code>su</code>) can get confused about what's <code>/etc/passwd</code>.</li>
+<li>many kernel implementations (inadvertently?) allow recursive calls
+to <code>chroot()</code> to escape from chroot jail, so chroot is not an effective
+security mechanism for a process running as root.</li>
+</ul></li>
+<li>Why hasn't chroot been fixed to confine a root process in that dir?
+<ul>
+<li>Root can write kern mem, load kern modules, access disk sectors, ..</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h2>Background: traditional web server architecture (Apache)</h2>
+
+<ul>
+<li>Apache runs <code>N</code> identical processes, handling HTTP requests.</li>
+<li>All processes run as user <code>'www'</code>.</li>
+<li>Application code (e.g. PHP) typically runs inside each of <code>N</code> apache processes.</li>
+<li>Any accesses to OS state (files, processes, ...) performed by <code>www</code>'s UID.</li>
+<li>Storage: SQL database, typically one connection with full access to DB.
+<ul>
+<li>Database principal is the entire application.</li>
+</ul></li>
+<li>Problem: if any component is compromised, adversary gets all the data.</li>
+<li>What kind of attacks might occur in a web application?
+<ul>
+<li>Unintended data disclosure (getting page source code, hidden files, ..)</li>
+<li>Remote code execution (e.g., buffer overflow in Apache)</li>
+<li>Buggy application code (hard to write secure PHP code), e.g. SQL injection</li>
+<li>Attacks on web browsers (cross-site scripting attacks)</li>
+</ul></li>
+</ul>
+
+<h2>Back to OKWS: what's their application / motivation?</h2>
+
+<ul>
+<li>Dating web site: worried about data secrecy.</li>
+<li>Not so worried about adversary breaking in and sending spam.</li>
+<li>Lots of server-side code execution: matching, profile updates, ...</li>
+<li>Must have sharing between users (e.g. matching) -- cannot just partition.</li>
+<li>Good summary of overall plan:
+<ul>
+<li><em>"aspects most vulnerable to attack are least useful to attackers"</em></li>
+</ul></li>
+</ul>
+
+<h3>Why is this hard?</h3>
+
+<ul>
+<li>Unix makes it tricky to reduce privileges (chroot, UIDs, ..)</li>
+<li>Applications need to share state in complicated ways.</li>
+<li>Unix and SQL databases don't have fine-grained sharing control mechanisms.</li>
+</ul>
+
+<h3>How does OKWS partition the web server?</h3>
+
+<ul>
+<li>Figure 1 in paper.</li>
+<li>How does a request flow in this web server?
+<ul>
+<li><code>okd -&gt; oklogd</code>
+<ul>
+<li><code>-&gt; pubd</code></li>
+<li><code>-&gt; svc -&gt; dbproxy</code></li>
+<li><code>-&gt; oklogd</code></li>
+</ul></li>
+</ul></li>
+<li>How does this design map onto physical machines?
+<ul>
+<li>Probably many front-end machines (<code>okld</code>, <code>okd</code>, <code>pubd</code>, <code>oklogd</code>, <code>svc</code>)</li>
+<li>Several DB machines (<code>dbproxy</code>, DB)</li>
+</ul></li>
+</ul>
+
+<h3>How do these components interact?</h3>
+
+<ul>
+<li><code>okld</code> sets up <code>socketpair</code>s (bidirectional pipes) for each service.
+<ul>
+<li>One socketpair for control RPC requests (e.g., "get a new log socketpair").</li>
+<li>One socketpair for logging (<code>okld</code> has to get it from <code>oklogd</code> first via RPC).</li>
+<li>For HTTP services: one socketpair for forwarding HTTP connections.</li>
+<li>For <code>okd</code>: the server-side FDs for HTTP services' socketpairs (HTTP+RPC).</li>
+</ul></li>
+<li><code>okd</code> listens on a separate socket for control requests (<em>repub</em>, <em>relaunch</em>).
+<ul>
+<li>Seems to be port 11277 in Figure 1, but a Unix domain socket in OKWS code.</li>
+<li>For <em>repub</em>, <code>okd</code> talks to <code>pubd</code> to generate new templates,
+<ul>
+<li>then sends generated templates to each service via RPC control channel.</li>
+</ul></li>
+</ul></li>
+<li>Services talk to DB proxy over TCP (connect by port number).</li>
+</ul>
+
+<h3>How does OKWS enforce isolation between components in Figure 1?</h3>
+
+<ul>
+<li>Each service runs as a separate UID and GID.</li>
+<li>chroot used to confine each process to a separate directory (almost).</li>
+<li>Components communicate via pipes (or rather, Unix domain socket pairs).</li>
+<li>File descriptor passing used to pass around HTTP connections.</li>
+<li>What's the point of <code>okld</code>?</li>
+<li>Why isn't <code>okld</code> the same as <code>okd</code>?</li>
+<li>Why does <code>okld</code> need to run as root?  (Port 80, chroot/setuid.)</li>
+<li>What does it take for <code>okld</code> to launch a service?
+<ul>
+<li>Create socket pairs</li>
+<li>Get new socket to <code>oklogd</code></li>
+<li><code>fork</code>, <code>setuid/setgid</code>, <code>exec</code> the service</li>
+<li>Pass control sockets to <code>okd</code></li>
+</ul></li>
+<li>What's the point of <code>oklogd</code>?</li>
+<li>What's the point of <code>pubd</code>?</li>
+<li>Why do we need a database proxy?
+<ul>
+<li>Ensure that each service cannot fetch other data, if it is compromised.
+<ul>
+<li>DB proxy protocol defined by app developer, depending on what app requires.</li>
+<li>One likely-common kind of proxy is a templatized SQL query.</li>
+<li>Proxy enforces overall query structure (select, update),
+<ul>
+<li>but allows client to fill in query parameters.</li>
+</ul></li>
+</ul></li>
+<li>Where does the 20-byte token come from? 
+<ul>
+<li>Passed as arguments to service.</li>
+</ul></li>
+<li>Who checks the token? 
+<ul>
+<li>DB proxy has list of tokens (&amp; allowed queries?)</li>
+</ul></li>
+<li>Who generates token? 
+<ul>
+<li>Not clear; manual by system administrator?</li>
+</ul></li>
+<li>What if token disclosed?
+<ul>
+<li>Compromised component could issue queries.</li>
+</ul></li>
+</ul></li>
+<li>Table 1: why are all services and <code>okld</code> in the same chroot?
+<ul>
+<li>Is it a problem?</li>
+<li>How would we decide? 
+<ul>
+<li>What are the readable, writable files there?</li>
+</ul></li>
+<li>Readable: shared libraries containing service code.</li>
+<li>Writable: each service can write to its own <code>/cores/&lt;uid&gt;</code>.</li>
+<li>Where's the config file? <code>/etc/okws_config</code>, kept in memory by <code>okld</code>.</li>
+<li><code>oklogd</code> &amp; <code>pubd</code> have separate chroots because they have important state:
+<ul>
+<li><code>oklogd</code>'s chroot contains the log file, want to ensure it's not modified.</li>
+<li><code>pubd</code>'s chroot contains the templates, want to avoid disclosing them (?).</li>
+</ul></li>
+</ul></li>
+<li>Why does OKWS need a separate GID for every service?
+<ul>
+<li>Need to execute binary, but file ownership allows chmod.</li>
+<li>Solution: binaries owned by root, service is group owner, mode 0410.</li>
+<li>Why 0410 (user read, group execute), and not 0510 (user read &amp; exec)?</li>
+</ul></li>
+<li>Why not process per user? 
+<ul>
+<li>Is per user strictly better? </li>
+<li>user X service?</li>
+<li>Per-service isolation probably made sense for okcupid given their apps.
+<ul>
+<li>(i.e., perhaps they need a lot of sharing between users anyway?)</li>
+</ul></li>
+<li>Per-user isolation requires allocating UIDs per user, complicating <code>okld</code>
+<ul>
+<li>and reducing performance (though may still be OK for some use cases).</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h3>Does OKWS achieve its goal?</h3>
+
+<ul>
+<li>What attacks from the list of typical web attacks does OKWS solve, and how?
+<ul>
+<li>Most things other than XSS are addressed.</li>
+<li>XSS sort-of addressed through using specialized template routines.</li>
+</ul></li>
+<li>What's the effect of each component being compromised, and "attack surface"?
+<ul>
+<li><code>okld</code>: root access to web server machine, but maybe not to DB.
+<ul>
+<li>attack surface: small (no user input other than svc exit).</li>
+</ul></li>
+<li><code>okd</code>: intercept/modify all user HTTP reqs/responses, steal passwords.
+<ul>
+<li>attack surface: parsing the first line of HTTP request; control requests.</li>
+</ul></li>
+<li><code>pubd</code>: corrupt templates, leverage to maybe exploit bug in some service?
+<ul>
+<li>attack surface: requests to fetch templates from okd.</li>
+</ul></li>
+<li><code>oklogd</code>: corrupt/ignore/remove/falsify log entries
+<ul>
+<li>attack surface: log messages from okd, okld, svcs</li>
+</ul></li>
+<li><code>service</code>: send garbage to user, access data for svc (modulo dbproxy)
+<ul>
+<li>attack surface: HTTP requests from users (+ control msgs from okd)</li>
+</ul></li>
+<li><code>dbproxy</code>: access/change all user data in the database it's talking to
+<ul>
+<li>attack surface: requests from authorized services
+<ul>
+<li>requests from unauthorized services (easy to drop)</li>
+</ul></li>
+</ul></li>
+</ul></li>
+<li>OS kernel is part of the attack surface once a single service is compromised.
+<ul>
+<li>Linux kernel vulnerabilities rare, but still show up several times a year.</li>
+</ul></li>
+<li>OKWS assumes developer does the right thing at design level (maybe not impl):
+<ul>
+<li>Split web application into separate services (not clump all into one).</li>
+<li>Define precise protocols for DB proxy (otherwise any service gets any data).</li>
+</ul></li>
+<li>Performance?
+<ul>
+<li>Seems better than most alternatives.</li>
+<li>Better performance under load (so, resists DoS attacks to some extent)</li>
+</ul></li>
+<li>How does OKWS compare to Apache?
+<ul>
+<li>Overall, better design.</li>
+<li><code>okld</code> runs as root, vs. nothing in Apache, but probably minor.</li>
+<li>Neither has a great solution to client-side vulnerabilities (XSS, ..)</li>
+</ul></li>
+<li>How might an adversary try to compromise a system like OKWS?
+<ul>
+<li>Exploit buffer overflows or other vulnerabilities in C++ code.</li>
+<li>Find a SQL injection attack in some <code>dbproxy</code>.</li>
+<li>Find logic bugs in service code.</li>
+<li>Find cross-site scripting vulnerabilities.</li>
+</ul></li>
+</ul>
+
+<h3>How successful is OKWS?</h3>
+
+<ul>
+<li>Problems described in the paper are still pretty common.</li>
+<li>okcupid.com still runs OKWS, but doesn't seem to be used by other sites.</li>
+<li>C++ might not be a great choice for writing web applications.
+<ul>
+<li>For many web applications, getting C++ performance might not be critical.</li>
+<li>Design should be applicable to other languages too (Python, etc).</li>
+<li>Infact, <code>zookws</code> for labs in 6.858 is inspired by OKWS, runs Python code.</li>
+</ul></li>
+<li>DB proxy idea hasn't taken off, for typical web applications.
+<ul>
+<li>But DB proxy is critical to restrict what data a service can access in OKWS.</li>
+<li>Why? 
+<ul>
+<li>Requires developers to define these APIs: extra work, gets in the way.</li>
+</ul></li>
+<li>Can be hard to precisely define the allowed DB queries ahead of time.
+<ul>
+<li>(Although if it's hard, might be a flag that security policy is fuzzy.)</li>
+</ul></li>
+</ul></li>
+<li>Some work on privilege separation for Apache (though still hard to use).
+<ul>
+<li>Unix makes it hard for non-root users to manipulate user IDs.</li>
+<li>Performance is a concern (running a separate process for each request).</li>
+</ul></li>
+<li><code>scripts.mit.edu</code> has a similar design, running scripts under different UIDs.
+<ul>
+<li>Mostly worried about isolating users from one another.</li>
+<li>Paranoid web app developer can create separate locker for each component.</li>
+</ul></li>
+<li>Sensitive systems do partitioning at a coarser granularity.
+<ul>
+<li>Credit card processing companies split credit card data vs. everything else.</li>
+<li>Use virtual machines or physical machine isolation to split apps, DBs, ..</li>
+</ul></li>
+</ul>
+
+<h3>How could you integrate modern Web application frameworks with OKWS?</h3>
+
+<ul>
+<li>Need to help okd figure out how to route requests to services.</li>
+<li>Need to implement DB proxies, or some variant thereof, to protect data.
+<ul>
+<li>Depends on how amenable the app code is to static analysis.</li>
+<li>Or need to ask programmer to annotate services w/ queries they can run.</li>
+</ul></li>
+<li>Need to ensure app code can run in separate processes (probably OK).</li>
+</ul>
+
+<h2>References</h2>
+
+<ul>
+<li><a href="http://css.csail.mit.edu/6.858/2014/readings/setuid.pdf">http://css.csail.mit.edu/6.858/2014/readings/setuid.pdf</a></li>
+<li><a href="http://httpd.apache.org/docs/trunk/suexec.html">http://httpd.apache.org/docs/trunk/suexec.html</a></li>
+</ul>

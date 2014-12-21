@@ -1,0 +1,183 @@
+Secure deallocation
+===================
+
+Aside: some recent reverse-engineering of Stuxnet by Symantec.
+    http://www.symantec.com/connect/blogs/stuxnet-breakthrough
+    Stuxnet targets specific frequency converters.
+    Manufactured by companies headquartered in either Finland or Tehran.
+    Used to drive motors at high speeds.
+    Stuxnet watches for a specific frequency band.
+    When detected, changes frequencies to low or high for short periods.
+
+Problem: disclosure of sensitive data.
+    1. Many kinds of sensitive data in applications.
+    2. Copies of sensitive data exist for a long time in running system.
+    3. Many ways for data to be disclosed (often unintentionally).
+
+What kinds of sensitive data are these authors concerned about?
+    Passwords, crypto keys, etc.
+    Small amounts of data that can be devastating if disclosed.
+    Bulk data, such as files in a file system.
+	Sensitive, but not as acute.
+	Hard to reduce data lifetime (the only knob this paper is using).
+	Small leaks might not be a disaster (unlike with a private key).
+
+Where could copies of sensitive data exist in a running system?
+    Example applications: typing password into Firefox; Zoobar web server.
+    Process memory: heap, stack.
+	IO buffers, X event queues, string processing libraries.
+	Language runtime makes copies (immutable strings, Lisp objects, ..)
+    Thread registers.
+    Files, backups of files, ...
+    Swapped memory, hibernate for laptops.
+    Kernel memory.
+	IO buffers: keyboard, mouse inputs.
+	Kernel stack, freed pages, saved thread registers.
+	Network packet buffers.
+	Pipe buffers contain data sent between processes.
+	Random number generator inputs.
+
+How does data get disclosed?
+    Any vulnerability that allows code execution.
+    Logging / debugging statements.
+    Core dumps.
+    DRAM cold-boot attacks.
+    Stolen disks, or just disposing of old disks.
+    Revealing uninitialized memory.
+	Applications with memory management bugs.
+	Linux kernel didn't zero net buffers, sent "garbage" data in packets.
+	Same with directories, "garbage" data was written to disk upon mkdir.
+	MS Word (used to?) contain "garbage" in saved files, such as old text.
+
+How serious is it?
+    What data copies might persist for a long time?
+	Process memory: Looks like yes.
+	    How do they figure this out?
+	    Use valgrind -- could do something similar in DynamoRIO.
+	    Track all memory allocs, reads, writes, frees.
+	Process registers: Maybe floating-point?  Still, probably not that bad.
+	Files, backups: lives on disk, long-term.
+	Swap: lives on disk, possibly long-term, expensive to erase.
+	Kernel memory.
+	    Experiments in paper show live data after many weeks (Sec 3.2).
+	    How do they figure this out?
+		Place many random 20-byte "stamps" in memory.
+		Periodically read all phys. memory in kernel, look for stamps.
+	    How can data continue to persist for so long?
+	    Memory should be getting reused?
+		To some extent, depends on the workload.
+		Even with an expensive workload, may not eliminate all stamps.
+		Holes in long-lived kernel data structures, slab allocators.
+	    Persistence across reboots, even.
+    Are there really that many data disclosure bugs?
+	Some examples of past bugs.
+	Worse yet: data disclosure bugs not treated with much urgency?
+
+Paper's goal:
+    Try to minimize the amount of time that sensitive data exists.
+    Not focusing on fixing data disclosure mechanisms (hard to generalize).
+
+How do we reduce/avoid data copies?
+    Process memory: need application's help.  Mostly what this paper is about.
+    Process registers: not really needed.
+    Swap: mlock(), mlockall() on Unix.  Encrypted swap.
+    File system: Bitlocker.  Vanish, if the application is involved.
+    Kernel memory: need to modify the kernel.  Partly discussed in paper.
+
+Paper's model for thinking about data lifetime in memory.
+    Interesting operations: allocation, write, read, free.
+    Conceptually applies to any memory.
+	malloc(), stack allocation on function call, global variables, ..
+    Ideal lifetime for data: from first write to last read (before write/free).
+	Can't do any better: data must stay around.
+    Natural lifetime: from first write to next write
+		      (potentially after free and re-alloc).
+	Natural lifetime is what most systems do today.
+	Data lives until overwritten by something else re-using that memory.
+
+Why is natural lifetime too long?
+    Bursty memory allocation: memory freed, never allocated again.
+    "Holes": not every byte of an allocation might be written to.
+	Holes in the stack.
+	Unused members in structs.
+	Padding in structs.
+	Variable-length data (e.g., packets or path names).
+
+How can we do better than natural lifetime?
+    "Secure deallocation": erase data from memory when region is freed.
+	Safe: programs should not rely on data living past free.
+	How close to ideal is this?
+	Depends on program, experiments show usually good (except for GUIs).
+    Can we do better?
+	Might be able to figure out last read through program analysis.
+	Seems tricky to do in a general-purpose way.
+	Programmers can manually annotate, or manually clear data.
+
+Secure deallocation in a process.
+    Heap: zero out the memory in free().
+	What about memory leaks?  Rely on OS to clean up on process exit.
+	Private allocators?  Modify, or rely on reuse or returning memory to OS.
+    Stack: two plans.
+	1. Augment the compiler to zero out stack frames on function return.
+	2. Periodically zero out memory below stack pointer, from the OS.
+	Advantages / disadvantages:
+	    1 is precise, but maybe expensive (CPU time, memory bandwidth).
+	    2 is cheaper, but may not clear right away, or delete everything.
+	    1 requires re-compiling code; 2 works with unmodified binaries.
+    Static data in process memory: rely on OS to clean up on exit.
+
+Secure deallocation in the kernel.
+    Can we apply the same plan as in the applications?  Why or why not?
+	Vague argument about kernel being performance-sensitive.
+	Not clear exactly why this is (applications are also perf-sensitive?).
+    What kinds of data do we want to clear in the kernel?
+	Data that applications are processing: IO buffers, anon process memory.
+	Not internal kernel data (e.g., pointers).
+	Not application data that lives on disk (files, directories).
+    Page allocation: track pages that contain sensitive data ("polluted").
+	Three lists of free pages:
+	    - Zeroed pages.
+	    - Polluted non-zero pages.
+	    - Unpolluated non-zero pages.
+	How is the polluted bit updated?
+	    Manually set in kernel code when page is used for process memory.
+	    Cleared when polluted free page is zeroed or overwritten.
+    Smaller kernel objects: caller of kfree() must say if object is polluted.
+	Objects presumably include network buffers, pipes, user IO, ..
+	Memory allocator then erases data just like free() in user-space.
+    Circular queues: semi-static allocation / specialized allocator.
+	E.g., terminal buffers, PRNG inputs.
+	Erase data when elements removed from queue.
+
+More efficient clearing of kernel memory.
+    No numbers to explain why optimizations are needed, or which ones matter..
+    Page zeroing: return different pages depending on callers to alloc.
+	Insight: zeroed pages are "expensive", polluted pages are "cheap".
+	1. Can return polluted page if caller will overwrite entire page.
+	   E.g., new page to be used to read an entire page from disk.
+	2. Avoid returning zeroed pages if caller doesn't care about contents.
+	   If not enough memory, return zeroed page, or zero a polluted page.
+	   Cannot simply return polluted page: sensitive data may persist.
+    Batch page zeroing: why?
+	Allows the optimization of caller overwriting page to take place.
+	May improve interactive performance, by deferring the cost of zeroing.
+    Specialized zeroing strategies.
+	Variable-length buffers: packets (implemented), path names (not).
+	Clear out just the used part (e.g., 64 byte pkt in 1500-byte buffer).
+
+Side-effects of secure deallocation.
+    Might make some bugs more predictable, or make bugs go away.
+    Periodic stack clearing may make uninitialized stack bugs less predictable.
+
+Performance impact?
+    Seems to be low, but a bit hard to tell what's going on in the kernel.
+
+What happens in a higher-level language (PHP, Javascript, ..)?
+    May need to modify language runtime to erase stack.
+    If runtime uses own allocator (typical), need to modify that as well.
+    Otherwise, free() may be sufficient.
+
+How does garbage collection interact with secure deallocation?
+    Reference-counting GC can free, erase objects fast in most cases.
+    Periodic garbage collection may unnecessarily prolong data lifetime.
+

@@ -1,0 +1,148 @@
+Security Usability
+==================
+
+is this problem real?  concrete examples of things that go wrong?
+
+why is usable security a big problem?
+    secondary tasks: users concerned with something other than security
+    negative goal / weakest link: must consider entire system
+    abstract, hard to reason about; little feedback: security often not tangible
+    users don't fully understand threats, mechanisms they're using
+
+why do we need users in the loop?
+    good reasons: users should be ultimately in control of their security
+    bad reasons: programmers didn't know what to do, so they asked the user
+    backwards compatibility
+
+what does the paper think constitutes usability for PGP?
+    encrypt/decrypt, sign/verify signatures
+    generate and distribute public key for encryption
+    generate and publish public key for signing
+    obtain other users' keys for verifying signatures
+    obtain other users' keys for encrypting
+    avoid errors (trusting wrong keys, accidentally not encrypting, ..)
+
+how do they evaluate it?
+
+cognitive walkthrough
+    inspection by a developer trying to simulate a user's mindset
+    overly-simplistic metaphors
+	physical keys are similar to symmetric crypto, not public-key crypto
+	quill pens lack the idea of a key being involved; key vs signature
+	leads to faulty intuition
+    not exposing key type information more explicitly
+	good principle: if user needs to worry about something, expose it well
+	users had to decide how to encrypt and sign a particular message
+	old vs new key type icons not well documented
+	figure 3: recipient dialog box talks about users, not keys
+    implicit trust policy that might not be obvious to users
+	web-of-trust model, keys can be trusted through multiple marginal sigs
+	user might not realize what's going on
+    not making key server operations explicit?  unclear what's the precise risk
+	failing to upload revocations to the key server
+	publicizing or revoking keys unintentionally
+    irreversible operations not well described
+	deleting private key: should tell user they won't be able to decrypt, ..
+	publicizing/revoking keys: warn the user it's a permanent change
+    too much info
+	UI focused on exposing what's technically hard: key trust management
+	maybe a good model would be to ask the user to specify a threat model
+	    beginner: worried about opportunistic attackers stealing plaintext
+	    medium: worried about attacker injecting malicious keys?
+	    advanced: worried about attacker compromising some friends?
+	    more advanced: worried about cryptographic attack on small key sizes
+	worry: users not good at estimating risk
+	    e.g. a worm might easily compromise friends' machines and sign keys
+
+lab experiment
+    users confused about how the keys fit into the security model
+	is something a key or a message?
+	    maybe extract as much info as possible from supplied data?
+	    could tell the user it's a key vs message based on headers etc
+	where do keys come from?  who generates them?
+	need to use recipient's key rather than my own (sender's)
+	key icons confusing because they don't differentiate public vs private
+    noone managed to handle mixed key types in a single message
+	practical solution was to send separate messages to each recipient
+	perhaps sacrifice generality for usability?
+    key trust questions were not prominent
+	some users concerned about why they should trust keys
+	one user assumed keys were OK because signed by campaign manager
+	    (but is campaign manager key's OK?)
+	noone used PGP's key trust model
+    overall results
+	4/12 managed to send an encrypted, signed email
+	3/12 disclosed the secret message in plaintext
+    what does this mean?
+	how effective is PGP in practice?
+	    maybe not so dismal for users that learn to use it over time
+	    on the other hand, easy to make dangerous mistakes
+	    all users disinclined to use PGP further
+	what other experiments would be valuable?
+	    no attackers in the experiment
+	    would users notice a bad signature?
+
+phishing attacks
+    look-alike domains
+	visually similar (bankofthevvest.com)
+	exploit incorrect user intuition (ebay-security.com)
+	unfortunately even legitimate companies often outsource some services!
+	    e.g. URLs like "ebay.somesurveysite.com"
+    visual deception
+	copy logos, site layout
+	inject look-alike security indicators
+	create new windows that look like other dialog boxes
+
+why is phishing such a big problem?  what UI security problems contribute to it?
+    novice users don't understand the threats they are facing
+    users don't have a clear mental model of the browser's security policy
+	users don't understand technical details of what constitutes an origin
+	users don't understand what to look for in an SSL certificate / EV certs
+	users don't understand implications of security decisions
+	    allow cookie?  allow non-SSL content?
+	    java security model: grant code from developer X access to FS/net?
+    browsers have complex security indicators
+	need to look at origin in URL bar, SSL certificate
+	security indicators can be absent instead of indicating a warning/error
+	e.g. if site is non-SSL, nothing out-of-the-ordinary appears to the user
+
+techniques to combat phishing?
+    most common: maintain a database of known phishing sites
+    why isn't this fully effective?
+    active vs passive warnings
+    habituation: users accustomed to warnings/errors
+    users focused on getting their work done
+	if the warning gives an option to continue, users may think it's OK
+
+    more intrusive measures are often more effective here
+	replace passwords with some other form of auth (smartcard, PAKE, etc)
+	    only works for credentials; attackers might still steal DOB, SSN, ..
+	turn phishing into online attack
+	    site must display an agreed-upon image before user enters password
+	    can be hard for users to comprehend how and what this defends from
+
+other human factors in system security?
+    social engineering attacks
+    least privilege can conflict with allowing users to do their work
+    differentiating between trust in users vs trust in users' machines
+
+principles for designing usable secure systems?
+    avoid false positives in security warnings (can make them errors then?)
+	active security warnings to force user to make a choice (cannot ignore)
+	present users with useful choices when possible
+	    users want to perform their task, don't want to choose "stop" option
+	    e.g. try to look up the correct key in a PGP key server?
+		 search google for an authentic web site vs phishing attack?
+    secure defaults; secure by design; "invisible security"
+	when does this work?
+	when is this insufficient?
+    intuitive security mechanisms that make sense to the user
+	some of the windows "privacy" knobs or wizards that give a few options
+    train users
+	users unlikely to spend time to learn on their own
+	interesting idea: try to train users as part of normal workflow
+	    try to mount phishing attacks on user by sending spam to them
+	    if they fall for an attack, tell them what they should've looked for
+	    can get tiresome after a while, if not done properly..
+	security training games
+

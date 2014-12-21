@@ -1,0 +1,434 @@
+<h1>Introduction</h1>
+
+<p><strong>Note:</strong> These lecture notes were transcribed and slightly modified from the ones posted on the 6.858 <a href="http://css.csail.mit.edu/6.858/2014/schedule.html">course website</a> from 2014.</p>
+
+<h2>What is security?</h2>
+
+<ul>
+<li>Achieving some goal in the presence of an adversary.
+<ul>
+<li>Many systems are connected to the internet, which has adversaries.
+<ul>
+<li>Thus, design of many systems might need to address security.</li>
+<li>i.e., will the system work when there's an adversary?</li>
+</ul></li>
+</ul></li>
+<li>High-level plan for thinking about security:
+<ul>
+<li><strong>Policy:</strong> the goal you want to achieve.
+<ul>
+<li>e.g. only Alice should read file <code>F</code>.</li>
+<li><em>Common goals:</em> confidentiality, integrity, availability.</li>
+</ul></li>
+<li><strong>Threat model:</strong> assumptions about what the attacker could do.
+<ul>
+<li>e.g. can guess passwords, cannot physically grab file server.</li>
+<li>Better to err on the side of assuming attacker can do something.</li>
+</ul></li>
+<li><strong>Mechanism:</strong> knobs that your system provides to help uphold policy.
+<ul>
+<li>e.g. user accounts, passwords, file permissions, encryption.</li>
+</ul></li>
+<li><strong>Resulting goal:</strong> no way for adversary within threat model to violate policy.
+<ul>
+<li>Note that goal has nothing to say about mechanism.</li>
+</ul></li>
+</ul></li>
+<li>Why is security hard? <strong>It's a negative goal.</strong>
+<ul>
+<li>Contrast: easy to check whether a positive goal is upheld, e.g., Alice can actually read file <code>F</code>. Harder to check that <em>there's no possible way Alice can read file <code>F</code></em>.
+<ul>
+<li>How would you even begin to enumerate all the possible ways Alice could go about
+reading the file? Too many layers at which Alice could exploit bugs to gain
+access to file <code>F</code>.</li>
+</ul></li>
+<li>Need to guarantee policy, assuming the threat model.</li>
+<li>Difficult to think of all possible ways that attacker might break in.</li>
+<li>Realistic threat models are open-ended (almost negative models).</li>
+<li>Weakest link matters.</li>
+<li>Iterative process: design, update threat model as necessary, etc.</li>
+</ul></li>
+</ul>
+
+<h2>What's the point if we can't achieve perfect security?</h2>
+
+<ul>
+<li>In this class, we'll push the boundary of each system to see when it breaks.
+<ul>
+<li>Each system will likely have some breaking point leading to compromise.</li>
+<li>Doesn't necessarily mean the system is not useful: depends on context.</li>
+<li>Important to understand what a system can do, and what a system cannot.</li>
+</ul></li>
+<li>In reality, must manage security risk vs benefit.
+<ul>
+<li>More secure systems means less risk (or consequence) of some compromises.</li>
+<li>Insecure system may require manual auditing to check for attacks, etc.</li>
+<li>Higher cost of attack means more adversaries will be deterred.</li>
+</ul></li>
+<li>Better security often makes new functionality practical and safe.
+<ul>
+<li>Suppose you want to run some application on your system.</li>
+<li>Large companies sometimes prohibit users from installing software that
+hasn't been approved on their desktops, partly due to security.</li>
+<li>Javascript in the browser is isolated, making it ok (for the most part)
+to run new code/applications without manual inspection/approval.
+(or virtual machines, or Native Client, or better OS isolation mechanisms)</li>
+<li>Similarly, VPNs make it practical to mitigate risk of allowing employees
+to connect to a corporate network from anywhere on the Internet.</li>
+</ul></li>
+</ul>
+
+<h2>What goes wrong #1: Problems with the policy</h2>
+
+<ul>
+<li><em>Example:</em> <a href="http://en.wikipedia.org/wiki/Sarah_Palin_email_hack" title="Sarah Palin's email hack">Sarah Palin's email account</a>. 
+<ul>
+<li>Yahoo email accounts have a username, password, and security questions.</li>
+<li>User can log in by supplying username and password.</li>
+<li>If user forgets password, can reset by answering security questions.</li>
+<li>Security questions can sometimes be easier to guess than password.</li>
+<li>Some adversary guessed Sarah Palin's high school, birthday, etc.</li>
+<li>Policy amounts to: can log in with either password or security questions.
+<ul>
+<li>(no way to enforce <em>"Only if user forgets password, then ..."</em>)</li>
+</ul></li>
+</ul></li>
+<li><em>Example:</em> <a href="http://www.wired.com/gadgetlab/2012/08/apple-amazon-mat-honan-hacking/all/">Mat Honan's accounts at Amazon, Apple, Google, etc.</a>
+<ul>
+<li>Gmail password reset: send a verification link to a backup email address.
+<ul>
+<li>Google helpfully prints part of the backup email address.</li>
+<li>Mat Honan's backup address was his Apple <code>@me.com</code> account.</li>
+</ul></li>
+<li>Apple password reset: need billing address, last 4 digits of credit card.
+<ul>
+<li>Address can be easy to get, but how to get 4 digits of user's credit card number?</li>
+</ul></li>
+<li>Amazon: can add a credit card to an account, no password required.</li>
+<li>Amazon password reset: provide any one of user's credit card numbers.
+<ul>
+<li>LOL.</li>
+</ul></li>
+<li>Amazon: will not print credit card numbers.. But will print last 4 digits!</li>
+</ul></li>
+<li><em>Example:</em> <a href="https://medium.com/p/24eb09e026dd">Twitter's <code>@N</code> account hijacking.</a>
+<ul>
+<li>Can be hard for legitimate user to prove they own an account!</li>
+</ul></li>
+<li>How to solve?
+<ul>
+<li>Think hard about implications of policy statements.</li>
+<li>Some policy checking tools can help, but need a way to specify what's bad.</li>
+<li>Difficult in distributed systems: don't know what everyone is doing.</li>
+</ul></li>
+</ul>
+
+<h2>What goes wrong #2: Problems with threat model / assumptions</h2>
+
+<ul>
+<li><em>Example:</em> human factors not accounted for.
+<ul>
+<li>Phishing attacks.</li>
+<li>User gets email asking to renew email account, transfer money, or ...</li>
+<li>Tech support gets call from convincing-sounding user to reset password.
+<ul>
+<li><a href="https://en.wikipedia.org/wiki/Rubber-hose_cryptanalysis">"Rubberhose cryptanalysis"</a></li>
+</ul></li>
+</ul></li>
+<li><em>Example:</em> computational assumptions change over time.
+<ul>
+<li>MIT's Kerberos system used 56-bit DES keys, since mid-1980's.</li>
+<li>At the time, seemed fine to assume adversary can't check all 2^56 keys.</li>
+<li>No longer reasonable: <a href="https://www.cloudcracker.com/dictionaries.html">now costs about $100</a>.
+<ul>
+<li>Several years ago, 6.858 final project showed can get any key in a day.</li>
+</ul></li>
+</ul></li>
+<li><em>Example:</em> all SSL certificate CAs are fully trusted.
+<ul>
+<li>To connect to an SSL-enabled web site, web browser verifies certificate.</li>
+<li>Certificate is a combination of server's host name and cryptographic key,
+<ul>
+<li>signed by some trusted certificate authority (CA).</li>
+</ul></li>
+<li>Long list (hundreds) of certificate authorities trusted by most browsers.</li>
+<li>If any CA is compromised, adversary can intercept SSL connections with
+<ul>
+<li>a "fake" certificate for any server host name.</li>
+</ul></li>
+<li>In 2011, two CAs were compromised, issued fake certs for many domains
+(Google, Yahoo, Tor, ...), apparently used in Iran (?).
+<ul>
+<li><a href="http://en.wikipedia.org/wiki/DigiNotar">http://en.wikipedia.org/wiki/DigiNotar</a></li>
+<li><a href="http://en.wikipedia.org/wiki/Comodo_Group">http://en.wikipedia.org/wiki/Comodo_Group</a></li>
+</ul></li>
+<li>In 2012, a CA inadvertently issued a root certificate valid for any domain.
+<ul>
+<li><a href="http://www.h-online.com/security/news/item/Trustwave-issued-a-man-in-the-middle-certificate-1429982.html">http://www.h-online.com/security/news/item/Trustwave-issued-a-man-in-the-middle-certificate-1429982.html</a></li>
+</ul></li>
+</ul></li>
+<li><em>Example:</em> assuming your hardware is trustworthy.
+<ul>
+<li>If NSA is your adversary, turns out to not be a good assumption.
+<ul>
+<li><a href="https://www.schneier.com/blog/archives/2013/12/more_about_the.html">https://www.schneier.com/blog/archives/2013/12/more_about_the.html</a></li>
+</ul></li>
+</ul></li>
+<li><em>Example:</em> assuming good randomness for cryptography.
+<ul>
+<li>Need high-quality randomness to generate the keys that can't be guessed.</li>
+<li>Problem: embedded devices, virtual machines may not have much randomness.</li>
+<li>As a result, many keys are similar or susceptible to guessing attacks.
+<ul>
+<li><a href="https://factorable.net/weakkeys12.extended.pdf">Mining Your Ps and Qs: Detection of Widespread Weak Keys in Network Devices</a></li>
+</ul></li>
+</ul></li>
+<li><em>Example:</em> subverting military OS security.
+<ul>
+<li>In the 80's, military encouraged research into secure OS'es.</li>
+<li>One unexpected way in which OS'es were compromised:
+<ul>
+<li>adversary gained access to development systems, modified OS code.</li>
+</ul></li>
+</ul></li>
+<li><em>Example:</em> subverting firewalls.
+<ul>
+<li>Adversaries can connect to an unsecured wireless behind firewall</li>
+<li>Adversaries can trick user behind firewall to disable firewall
+<ul>
+<li>Might suffice just to click on link <code>http://firewall/?action=disable</code></li>
+<li>Or maybe buy an ad on CNN.com pointing to that URL (effectively)?</li>
+</ul></li>
+</ul></li>
+<li><em>Example:</em> machines disconnected from the Internet are secure?
+<ul>
+<li>Stuxnet worm spread via specially-constructed files on USB drives.</li>
+</ul></li>
+<li>How to solve?
+<ul>
+<li>More explicit threat models, to understand possible weaknesses.</li>
+<li>Simpler, more general threat models.</li>
+<li>Better designs may eliminate / lessen reliance on certain assumptions.
+<ul>
+<li>E.g., alternative trust models that don't have fully-trusted CAs.</li>
+<li>E.g., authentication mechanisms that aren't susceptible to phishing.</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h2>What goes wrong #3: problems with the mechanism -- bugs</h2>
+
+<ul>
+<li>Bugs in the security mechanism (e.g., OS kernel) lead to vulnerabilities.</li>
+<li>If application is enforcing security, app-level bugs lead to vulnerabilities.</li>
+<li><em>Example:</em> <a href="https://github.com/hackappcom/ibrute">Apple's iCloud password-guessing rate limits.</a>
+<ul>
+<li>People often pick weak passwords; can often guess w/ few attempts (1K-1M).</li>
+<li>Most services, including Apple's iCloud, rate-limit login attempts.</li>
+<li>Apple's iCloud service has many APIs.</li>
+<li>One API (the <em>"Find my iPhone"</em> service) forgot to implement rate-limiting.</li>
+<li>Adversary could make many attempts at guessing passwords.
+<ul>
+<li>Probably as fast as they can send packets: <code>&gt;&gt; M/day.</code></li>
+</ul></li>
+</ul></li>
+<li><em>Example:</em> <a href="http://www.nytimes.com/2011/06/14/technology/14security.html">Missing access control checks in Citigroup's credit card web site.</a>
+<ul>
+<li>Citigroup allowed credit card users to access their accounts online.</li>
+<li>Login page asks for username and password.</li>
+<li>If username and password OK, redirected to account info page.</li>
+<li>The URL of the account info page included some numbers.</li>
+<li>Turns out the numbers were (related to) the user's account number.</li>
+<li>Worse yet, server didn't check that you were logged into that account.</li>
+<li>Adversary tried different numbers, got different people's account info.</li>
+<li>Possibly a wrong threat model: doesn't match the real world?
+<ul>
+<li>System is secure if adversary browses the web site through browser.</li>
+<li>System not secure if adversary synthesizes new URLs on their own.</li>
+</ul></li>
+<li>Hard to say if developers had wrong threat model, or buggy mechanism.</li>
+</ul></li>
+<li><em>Example:</em> <a href="https://bitcoin.org/en/alert/2013-08-11-android">Android's Java <code>SecureRandom</code> weakness leads to Bitcoin theft.</a>
+<ul>
+<li>Bitcoins can be spent by anyone that knows the owner's private key.</li>
+<li>Many Bitcoin wallet apps on Android used Java's <code>SecureRandom</code> API.</li>
+<li>Turns out the system was sometimes forgetting to seed the PRNG!</li>
+<li>As a result, some Bitcoin keys turned out to be easy to guess.</li>
+<li>Adversaries searched for guessable keys, spent any corresponding bitcoins.</li>
+</ul></li>
+<li><em>Example:</em> bugs in sandbox (<a href="https://developer.chrome.com/native-client">NaCl</a>, Javascript, Java runtime).
+<ul>
+<li>Allows adversary to escape isolation, do operations they weren't supposed to.</li>
+</ul></li>
+<li><em>Example:</em> Moxie's SSL certificate name checking bug
+<ul>
+<li>Null byte vs. length-encoding.</li>
+</ul></li>
+<li><em>Example:</em> buffer overflows (see below).</li>
+</ul>
+
+<h2>Case study: buffer overflows</h2>
+
+<ul>
+<li>Consider a web server.
+<ul>
+<li>Often times, the web server's code is responsible for security.</li>
+<li>E.g., checking which URLs can be accessed, checking SSL client certs, ..</li>
+<li>Thus, bugs in the server's code can lead to security compromises.</li>
+</ul></li>
+<li>What's the threat model, policy?
+<ul>
+<li>Assume that adversary can connect to web server, supply any inputs.</li>
+<li>Policy is a bit fuzzy: only perform operations intended by programmer?</li>
+<li>E.g., don't want adversary to steal data, bypass checks, install backdoors.</li>
+</ul></li>
+<li>Consider the following simplified example code from, say, a web server:</li>
+</ul>
+
+<p><code>webserver.c:</code></p>
+
+<pre><code>    int read_req(void) {
+        char buf[128];
+        int i;
+        gets(buf);
+        i = atoi(buf);
+        return i;
+    }
+</code></pre>
+
+<ul>
+<li>What does the compiler generate in terms of memory layout?
+<ul>
+<li>x86 stack:
+<ul>
+<li>Stack grows down.</li>
+<li><code>%esp</code> points to the last (bottom-most) valid thing on the stack.</li>
+<li><code>%ebp</code> points to the caller's %esp value.</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p><code>read_req() stack layout:</code></p>
+
+<pre><code>                     +------------------+
+    entry %ebp ----&gt; | .. prev frame .. |
+                     |                  |
+                     |                  |
+                     +------------------+
+    entry %esp ----&gt; |  return address  |
+                     +------------------+
+    new %ebp ------&gt; |    saved %ebp    |
+                     +------------------+
+                     |     buf[127]     |
+                     |       ...        |
+                     |      buf[0]      |
+                     +------------------+
+                     |        i         |
+    new %esp ------&gt; +------------------+
+                     |       ...        |
+                     +------------------+
+</code></pre>
+
+<ul>
+<li>Caller's code (say, <code>main()</code>):
+<ul>
+<li>call <code>read_req()</code></li>
+</ul></li>
+</ul>
+
+<p><code>read_req()'s assembly code:</code></p>
+
+<pre><code>    push    %ebp
+    mov     %esp -&gt; %ebp
+    sub     168, %esp        # stack vars, etc
+    ...
+    mov     %ebp -&gt; %esp
+    pop     %ebp
+    ret
+</code></pre>
+
+<ul>
+<li>How does the adversary take advantage of this code?
+<ul>
+<li>Supply long input, overwrite data on stack past buffer.</li>
+<li>Interesting bit of data: return address, gets used by <code>ret</code>.</li>
+<li>Can set return address to the buffer itself, include some code in there.</li>
+</ul></li>
+<li>How does the adversary know the address of the buffer?
+<ul>
+<li>What if one machine has twice as much memory?</li>
+<li>Luckily for adversary, virtual memory makes things more deterministic.</li>
+<li>For a given OS and program, addresses will often be the same.</li>
+</ul></li>
+<li>What happens if stack grows up, instead of down?
+<ul>
+<li>Look at the stack frame for <code>gets()</code>.</li>
+</ul></li>
+<li>What can the adversary do once they are executing code?
+<ul>
+<li>Use any privileges of the process.</li>
+<li>Often leverage overflow to gain easier access into system.
+<ul>
+<li>Originally on Unix, run shell <code>/bin/sh</code> (hence the term "shell code").</li>
+</ul></li>
+<li>If the process is running as <code>root</code> or <code>Administrator</code>, can do anything.</li>
+<li>Even if not, can still send spam, read files (web server, database), ..</li>
+<li>Can attack other machines behind a firewall.</li>
+</ul></li>
+<li>Why would programmers write such code?
+<ul>
+<li>Legacy code, wasn't exposed to the internet.</li>
+<li>Programmers were not thinking about security.</li>
+<li>Many standard functions used to be unsafe (<code>strcpy</code>, <code>gets</code>, <code>sprintf</code>).</li>
+<li>Even safe versions have gotchas (<code>strncpy</code> does not null-terminate).</li>
+</ul></li>
+<li>More generally, any memory errors can translate into a vulnerability.
+<ul>
+<li>Using memory after it has been deallocated (<em>use-after-free</em>).
+<ul>
+<li>If writing, overwrite new data structure, e.g. function pointer.</li>
+<li>If reading, might call a corrupted function pointer.</li>
+</ul></li>
+<li>Freeing the same memory twice (<em>double-free</em>).
+<ul>
+<li>Might cause <code>malloc()</code> to later return the same memory twice.</li>
+</ul></li>
+<li>Decrementing the stack pointer past the end of stack, into some other memory.
+<ul>
+<li><a href="http://www.invisiblethingslab.com/resources/misc-2010/xorg-large-memory-attacks.pdf">Exploiting large memory management vulnerabilities in Xorg server running on Linux</a></li>
+</ul></li>
+<li>A one-byte stray write can lead to compromise.
+<ul>
+<li><a href="http://www.openwall.com/lists/oss-security/2014/08/26/2">glibc __gconv_translit_find() exploit</a></li>
+</ul></li>
+<li>Might not even need to overwrite a return address or function pointer.
+<ul>
+<li>Can suffice to read sensitive data like an encryption key.</li>
+<li>Can suffice to change some bits (e.g. <code>int isLoggedIn</code>, <code>int isRoot</code>).</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h2>How to avoid mechanism problems?</h2>
+
+<ul>
+<li>Reduce the amount of security-critical code.
+<ul>
+<li>Don't rely on the entire application to enforce security.</li>
+<li>Will do in Lab 2.</li>
+</ul></li>
+<li>Avoid bugs in security-critical code.
+<ul>
+<li>E.g., don't use <code>gets()</code>, use <code>fgets()</code> which can limit buffer length.</li>
+<li>Use common, well-tested security mechanisms (<em>"Economy of mechanism"</em>).</li>
+<li>Audit these common security mechanisms (lots of incentive to do so).</li>
+<li>Avoid developing new, one-off mechanisms that may have bugs.</li>
+<li>Good mechanism supports many uses, policies (more incentive to audit).</li>
+</ul></li>
+<li>Examples of common mechanisms:
+<ul>
+<li>OS-level access control (but, could often be better)</li>
+<li>network firewalls (but, could often be better)</li>
+<li>cryptography, cryptographic protocols.</li>
+</ul></li>
+</ul>

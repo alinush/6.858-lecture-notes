@@ -1,0 +1,147 @@
+Botnets
+=======
+
+botnet: network of many machines under someone's control
+
+what are botnets good for?
+    using the resources of bot nodes:
+	IP addrs (spam, click fraud), bandwidth (DoS), maybe CPU (??)
+    steal sensitive user data (bank account info, credit cards, etc)
+    impersonate user (inject requests to transfer money on user's behalf)
+    extortion (encrypt user's data, demand payment for decryption)
+    attackers might be able to extract a lot of benefit from high-value machines
+	one botnet had control of machines of officials of diff governments
+	could enable audio, video and stream it out of important meetings?
+	other candiates: stealing secret designs from competitor company?
+    what sorts of attacks are counter-productive for attacker?
+	making the machine unusable for end-user (unless trying extortion)
+
+how does the botnet grow?  (largely orthogonal from botnet operation)
+    this particular botnet (Torpig): drive-by downloads
+	user's browser loads a malicious page (e.g. attacker purchased adspace)
+	malicious page looks for vulnerabilities in browser or plug-ins
+	if it finds a way to execute native code, downloads bot code
+	can we prevent or detect this?  maybe look for unusual new processes?
+	    botnet in paper: injects DLLs into existing processes
+		can use a debugging interface to modify existing process
+		some processes support plugins/modules (IE, windows explorer)
+		once DLL running in some other process, looks less suspicious?
+
+    other schemes: worms (self-replicating attack malware)
+	why worms?
+	    harder to detect (no single attack source)
+	    compromise more machines (attacker now behind firewalls)
+	    faster (much less than an hour for every internet-connected machine)
+	usually exploit a few wide-spread vulnerabilities
+	simple worms: exploit some vulnerability in network-facing service
+	    easy strategy: try to spread to other machines at random
+		e.g. guessing random IPs works (but inefficient)
+	    use user's machine as source of other victims
+		for worms that spread via email, try user's email address book
+		try other victims in the same network as the current machine
+		try machines in user's ssh known_hosts file
+	    use other databases to find candidate victims
+		google for "powered by phpBB"
+	    try to propagate to any servers that the user connects to
+		hides communication patterns!
+	more complex worms possible (from web server to browser and back)
+	    requires finding wide-spread bugs in multiple apps at once
+	    less common as a result?
+	can we prevent or detect this?
+	    prevent: could try to isolate machines after you've detected it
+	    worm fingerprinting in the network (traffic patterns)
+	    monitor unused machines, email addresses, etc for suspicious traffic
+		in theory shouldn't be getting anything legitimate
+	    what would show up if you monitored traffic to unused subnet?
+		network mapping by researchers?
+		random probes by worms poking at IP addresses
+		"backscatter" from source-spoofing
+		could use these to infer what's happening "out there"
+	    detect by planting honeypots
+		if machine starts generating traffic, probably infected
+
+once some machine is infected, how does the botnet operate?
+    bot master, command and control (C&C) server(s), bots talk to C&C servers
+    bots receive commands from C&C servers
+    some bots accept commands from the network (e.g. run an open proxy server)
+    upload stolen data either to the same C&C servers or some other server
+
+how do bot masters try to avoid being taken down?
+    change the C&C server's IP address ("fast flux")
+	can move from one ISP to another after getting abuse complaints
+	how to inform your bots that your IP address changed?  DNS
+	domain name is a single point of failure for bot master
+    dynamic domain names ("domain flux")
+	how does this work?
+	how do you take down access to a botnet using this?
+	is there still a single point of failure here?
+	    currently many different domain registrars, little cooperation
+	conficker generated many more dynamic domain names than torpig
+	makes it impractical to register all of these names ahead of time
+    peer-to-peer control networks (Storm botnet)
+	harder for someone else to take down: no single server
+	harder for botmaster to hide botnet internals: no protected central srvr
+
+how did torpig work?
+    mebroot installs itself into the MBR, so gets to inject itself early on
+    loads modules from mebroot C&C server
+    mebroot C&C server responds with torpig DLL to inject into various apps
+    torpig DLL collects any data that matches pre-defined patterns
+	usernames and passwords; credit card numbers; ...
+    torpig DLL contacts torpig's C&C server for info about what sites to target
+	torpig's C&C server using domain flux: weekly and daily domains
+    "injection server" responsible for stealing credentials for a specific site
+	redirects visits to bank login page to fake login page
+	in-browser DLL subverts any browser protections (SSL, lock icon)
+    lots of "outsourcing" going on: mebroot, torpig, torpig build customers?
+
+    all traffic encrypted
+	but these bots implement their own crypto: bad plan, can get broken
+	conficker used well-known crypto, and was thus much harder to break
+
+how did these guys take over the botnet?
+    attackers did not register every torpig dynamic domain name ahead of time
+    bots did not properly authenticate responses from C&C server
+    (torpig "owners" eventually took back control through mebroot's C&C)
+
+how big is the torpig botnet?
+    1.2 million IPs
+    each bot has a "nid" that reflects its hardware config (disk serial number)
+    ~180k unique nid's
+    ~182k unique (nid+os+...)'s
+    40 VMs (nid's match a standard configuration of vmware or qemu)
+    lots of IP reuse
+    aggregate bandwidth is likely over 17 Gbps
+
+how effective is torpig?
+    authors collected all data during the 10 days they had control of torpig
+    collected lots of account information: millions of passwords
+	many users reuse passwords across sites
+    8310 accounts at financial institutions
+    1660 credit/debit card numbers
+	30 came from a single compromised at-home call center node
+	pattern-matching works well: don't have to know app ahead of time
+    kept producing a steady stream of new financial data throughout the 10 days
+	what's going on?
+	probably users don't enter their CC#, bank password every day
+
+how effective is spam?
+    separate paper looked at the economics of sending spam
+	about 0.005% users visit URLs in spam messages (1 out of 20,000)
+	less than 10% of those users "bought" whatever the site was selling
+	so send ~200,000 spam messages for one real customer
+	unclear if it's cost-effective (esp. if bots are nearly-free)
+
+how to defend against bots?
+    are TPMs of any help?
+	maybe a way to keep your credentials safe (and avoid simple passwords)
+    resource abuse: annoying because it gets your machine blacklisted
+	VMM-level scheme to track user activity?
+    make their operation not cost-effective
+	need to get a good idea of what's most profitable for botmasters
+
+did these guys make it more difficult to mount similar attacks in the future?
+    probably torpig will get fixed
+    other papers written about takeovers on different bot nets
+    other bots employ much stronger security measures to prevent takeover
+

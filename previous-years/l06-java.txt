@@ -1,0 +1,234 @@
+Java Security
+=============
+
+Confinement of mobile code
+    What does this paper mean by mobile code?
+	Java, Javascript, ActiveX, Flash, ...
+	Code you download and execute on your machine
+    How is this different from downloading a standard desktop application?
+	E.g. you might download an entire Ubuntu CD, or just 'vi', or 'Notepad'
+	Main difference: want the 'mobile code' to run without user input
+	Need a better security plan, since arbitrary code may run at any time
+    Challenge: still need to allow mobile code to do some privileged operations
+	E.g. write its own files, some network access, ..
+
+Why not existing techniques?
+    OS isolation (KeyKOS, Unix ala OKWS)
+	Portability: Each OS has different mech (Windows, Linux, KeyKOS, ..)
+	Performance: OS mechanisms rely on hardware isolation.
+	    Expensive to switch between protection domains.
+	    Why?  Often need to do a context switch, change page tables.
+	    Causes invalidation of hardware caches, incurring a perf. penalty.
+	Didn't KeyKOS, OKWS perform OK?
+	    This paper argues it was at the expense of ease-of-programming.
+	    Requires programmer to worry about protection domain crossings.
+	    Language-level protection domain crossings might be 1000x cheaper.
+    Software isolation like XFI
+	XFI +: can use XFI with any language (not just Java)
+	XFI -: XFI mainly addresses memory safety, not other privileges
+
+Two kinds of protection / security in Java
+    Memory protection
+	Making sure one program does not corrupt another program's state.
+	How does java achieve this?
+	    Verify bytecode before running it.
+		Bytecode can only access data, invoke code safely.
+		No way to directly access memory, invoke syscall, ..
+	    Safety rules: type safety and private/public methods/fields.
+		Java: all code in classes, all data in objects.
+		Object fields public or private (to code in that class).
+	    Would range checking suffice?  e.g. object is of a given size?
+		probably not: can synthesize pointers
+    Secure services
+	Application might want to do more things than just access memory.
+	    Access files, network
+	Many examples from past papers:
+	    Compiler in 'confused deputy'
+	    Services in OKWS
+	    setuid programs in Unix
+	Requires more than just memory safety, but policy is more varied.
+	Java: provides mechanisms to enforce some dynamic security policy.
+
+Basic Java sandbox model
+    Two kinds of code: trusted and untrusted
+	Differentiated by their ClassLoaders
+	ClassLoader: turns class name (string) into a Java class object
+	Resulting Java classes keep a pointer to their original ClassLoader
+	    One ClassLoader used to load java code from the local disk
+	    Another ClassLoader used to load java code from the network
+    Both kinds of classes co-exist in the same JVM
+	Why?
+	Presumably system classes (trusted) invoke applet code (untrusted).
+	Want to allow system classes to, e.g., load applet code over the net.
+    Operations: file system access, network access
+    Who can invoke operations?
+	Trusted context: any operation
+	Untrusted context: communicate with applet's origin server
+    Why do we need stack inspection to determine trusted vs untrusted context?
+	Rule: context is untrusted if any stack frame is running untrusted code
+	Why not just check the immediate caller?
+	    There may be trusted (local) code that invokes sensitive ops
+	    Untrusted code may thus perform sensitive operations indirectly
+	    E.g.: trusted void countLines(String filename)
+		  should it be allowed to access the specified file?
+    Who performs this check?
+	There's a SecurityManager in Java
+	Whenever trusted code is about to perform privileged op, calls SecMgr
+    Paper argues this model is too restrictive.  Why?
+	Want trusted code to do sensitive ops, even if called from untrusted.
+	Want to grant limited privileges to not-fully-trusted (remote) code.
+	    Grant screen-drawing privs to youtube.com
+	    Grant access to local storage to gmail.com
+	    => Need to differentiate between diff untrusted code (principals)
+    Is this model sufficiently restrictive?  Does it always guarantee safety?
+	Trusted code can be tricked by untrusted code, without it being on stack
+	E.g., in trusted code:
+	    open(x.getFileName()), where x is an untrusted object.
+	Or, register an Swing/AWT callback with specially-crafted arguments?
+	All stack frames will be trusted, but untrusted code "caused" the op
+    Is this ClassLoader-based separation reliable?
+	Assumes adversary can't get local ClassLoader to load his/her code
+	But lots of untrusted data is reachable by local ClassLoader
+	E.g. browser cache, network paths, temporary files, ..
+
+Pre-requisites for more fine-grained access control in Java
+    Principal
+	Some party that signs a piece of code
+	Very general: any principal we might want can be a signing key
+	Expected use: software developer signs.
+	Is this a good right model?
+	What doesn't this work for?
+	    Applet may want to priv-separate itself.
+	    Could perhaps use many keys to sign different components.
+    Objects ("targets") and operations
+	Some well-defined ones: network, file system, ..
+	Application may want to define its own
+    Policy
+	Not very clearly spelled out in this paper what the policy looks like
+	Rules that grant access to operations on objects to diff. principals
+
+Capabilities
+    Key idea: rely on Java pointers/references being unforgeable
+    How does this help vs. sandbox policy?
+	Code can invoke methods on an object if it has an object reference.
+	Also subject to Java's private/restricted method access control.
+	Can grant privileges to applets (by giving them object reference).
+    Example: Figure 2: SubFS, kind-of like chroot
+	Can attacker get fs from SubFS?
+	Can attacker change rootPath?
+	Can attacker make a new SubFS?
+    Why isn't Java pointers good enough for capability-based isolation?
+	Global namespaces inside Java
+	    Can access things using class names
+	    - invoke class constructor
+	    - access global static objects
+	    - access static class methods
+	Pure capability systems have no global names (e.g., KeyKOS)
+
+Stack introspection
+    What's the strawman design?
+	enablePrivilege(target)
+	disablePrivilege(target)
+	checkPrivilege(target)
+    Who makes these calls?
+	checkPrivilege invoked before performing privileged operation, as before
+	enable/disablePrivilege invoked by code that's about to call above func
+    WHat are these targets?
+	Free-form: just need to match up between check and enable (& policy)
+	In reality it's a hierarchical namespace of targets
+	    e.g., { java.io.FilePermission, "read,write", "/home/alice/*" }
+    Who is allowed to call enablePrivilege()?
+	Trusted code can call enablePrivilege() on any target
+	Untrusted (applet) code: depends on policy
+    What does this policy look like?
+	Not well-specified, but probably a set of (principal, target) pairs
+	User sometimes involved in specifying policy.
+	    Java runtime asks 'grant somePrivilege to someApplet'?
+    How does this help, vs. simple sandbox policy?
+	Trusted code can call enablePrivilege() to perform trusted op.
+	.. even if it was called by untrusted code higher in the stack.
+    What goes wrong with the strawman?
+	Simple: need to ensure privileges are local to a thread.
+	    Solution: keep track of privileges per thread.
+	Simple: might forget to disablePrivilege()
+	    Solution: disable privileges on function return.
+	Tricky: trusted code invokes untrusted code ("luring" attack)
+	    Untrusted code might be able to use all enablePrivilege()'s
+		When might this happen?  Callbacks like AWT, ..
+	    Solution: verify that entire stack from checkPrivilege() to
+		enablePrivilege() consists of principals allowed that privilege
+	    Is this safe?  Yes, any stack frame could call enablePrivilege().
+    Example: Figure 4 (SubFS using stack introspection)
+	Some traces of capability design: ref to FileInputStream allows access
+	Why is it OK for FS constructor to be public now?
+	Why does an applet going through a TrustedServce object work?
+	FS object remembers if it was constructed from trusted ctxt (usePrivs)
+    Who gets to define the targets?  Why does it matter?
+	Might want third-party code to control its own privileges.
+	What does it mean to define a target?
+	    Really about who can call enable (and who can specify policy rules).
+	    Anyone can always call checkPriv() on any target they want.
+	Netscape design: add extra level of hierarchy to target names: princial
+	    (System, "FileAccess", "/home/alice/*")
+	    (google.com, "GmailFolderAccess", "Spam")
+	    gmail code might grant the latter priv to client-side spam filter
+    How does code signing work?
+	Microsoft and Netscape have different schemes
+	Netscape scheme:
+	    Principals sign code.
+	    Code asks for privileges to targets at runtime (call some function).
+	    Policy says what principals should be granted what targets.
+	    If policy doesn't know, ask the user.
+	    Multiple principals can sign code (why is this a good idea?).
+		What happens with policy?  Need one positive, no negatives.
+	Microsoft scheme:
+	    One principal signs (code, targets)
+	    Policy says what principals should be granted what targets
+	    More explicit: principal never grants unintended targets
+		Suppose Google has one signing key
+		Doesn't want to grant all privileges to all of their code
+		Can specify specific subsets of privileges for each signed class
+		Good idea: always be explicit
+
+Namespace management
+    Effectively a way to make capabilities work with existing Java libraries
+    No more global namespace of classes
+    Instead, separate namespace for every principal
+	Can eliminate some classes entirely (will get undefined class exception)
+	Can provide specialized, restricted implementation
+    Implemented using a ClassLoader that looks at caller's principal
+    Pitfalls?
+	Might be able to abuse code that _does_ have access to protected classes
+	Confused deputy problem: ambient authority (access to classes by name)
+	No analog of enablePrivilege(), luring attack is possible
+
+Mediation
+    Why do they think it's a bad idea to grant privileges?
+    In KeyKOS this seemed helpful in constructing least-privilege domains.
+    Worry: you might be wrong about granting privileges to some applet
+	Want to revoke privileges and not worry about where they leaked.
+	No way to revoke granting a capability, in a basic capability design.
+	Typical trick: wrapper that checks who called (stack insp?)
+    Can stack inspection leak privileges?
+	Avoids luring attack by checking every frame along the path to enableP
+    Can namespace management leak privileges?
+	Trusted code can accidentally return a 'privileged object'
+	Untrutsed code might invoke it, if it has access to some superclass
+	    (e.g. InputStream vs FileInputStream)
+
+Accountability
+    Capabilities: know who got the capability at first, but not who used it
+    Stack inspection: know who called enablePrivilege()
+    Name space: no idea what happened, aside from what the namespace policy was
+
+Least privilege
+    How do the systems stack up?
+    Easiest to reduce privileges in capabilities
+    Easy to reduce some privileges in stack inspection (call disablePrivilege)
+    Hard to disable privileges in namespace management
+
+Performance
+    Stack introspection has higher runtime cost (inspect the stack)
+
+In practice, stack inspection seems to be the prevalent Java security model now
+

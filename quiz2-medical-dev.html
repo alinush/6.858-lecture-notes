@@ -1,0 +1,189 @@
+<h1>6.858 Quiz 2 Review</h1>
+
+<h2>Medical Device Security</h2>
+
+<p>FDA standards: Semmelweis e.g. <code>=&gt;</code> Should wash hands</p>
+
+<p>Defirbillator:</p>
+
+<ul>
+<li>2003: Implanted defibrillator use WiFi. What could
+possibly go wrong?</li>
+<li>Inside: battery, radio, hermetically sealed </li>
+</ul>
+
+<p>Why wireless?</p>
+
+<ul>
+<li>Old way: Inject a needle into arm to twist dial, risk of infection :(</li>
+</ul>
+
+<p><strong>Q:</strong> What are security risks of wireless?</p>
+
+<ul>
+<li>Unsafe practices - implementation errors.</li>
+<li>Manufacturer and User Facility Device Experience (MAUDE) database
+<ul>
+<li>Cause of death: buffer overflow in infusion pump.</li>
+<li>Error detected, but brought to safe mode, turn off pump.</li>
+<li>Patient died after increase in brain pressure because
+no pump, because of buffer overflow.</li>
+</ul></li>
+</ul>
+
+<h4>Human factors and software</h4>
+
+<p>Why unique?</p>
+
+<p>500+ deaths</p>
+
+<p>E.g. User interface for delivering dosage to patients did not properly indicate
+whether it expected hours or minutes as input (hh:mm:ss). Led to order of
+magnitude error: 20 min vs. the intended 20 hrs.</p>
+
+<h4>Managerial issues</h4>
+
+<p>Medical devices also need to take software updates.</p>
+
+<p>E.g. McAffee classified DLL as malicious, quarantines,
+messed up hospital services.</p>
+
+<p>E.g. hospitals using Windows XP:
+  - There are no more security updates from Microsoft for XP, but still new medical products shipping Windows XP.</p>
+
+<h4>FDA Cybersecurity Guidance</h4>
+
+<p>What is expected to be seen from manufacturers? How they
+have thought through the security problems / risks /
+mitigation strategies / residual risks?</p>
+
+<h4>Adversary stuff</h4>
+
+<p>Defibrillator &amp; Implants</p>
+
+<p>This section of the notes refers to the discussion of attacks on implanted defibrillators from Kevin Fu's lecture. In one example he gave, the implanted devices are wirelessly programmed with another device called a "wand", which uses a proprietary (non-public, non-standardized) protocol. Also, the wand transmits (and the device listens) on specially licensed EM spectrum (e.g. not WiFI or bluetooth). The next two lines describe the surgical process by which the defibrillator is implanted in the patient.</p>
+
+<ul>
+<li>Device programmed w/ wand, speaking proprietary protocol
+over specially licensed spectrum. (good idea w.r.t.
+security?)</li>
+<li>Patient awake but numbed and sedated</li>
+<li><p>Six people weave electrodes through blood vessel....</p></li>
+<li><p>Patient given a base station, looks like AP, speaks proprietary RF to implant, 
+data sent via Internet to healthcare company</p></li>
+<li><p>Communication between device and programmer: no crypto / auth, data sent in plaintext</p></li>
+<li><p>Device stores:  Patient name, DOB, make &amp; model, serial no., more...</p></li>
+<li><p>???????? Use a software radio (USRP/GNU Radio Software)</p></li>
+</ul>
+
+<p><strong>Q:</strong> Can you wirelessly induce a fatal heart rhythm <br />
+<strong>A:</strong> Yes. Device emitted 500V shock in 1 msec. E.g. get kicked in chest by horse.</p>
+
+<p>Devices fixed through software updates?</p>
+
+<h4>Healthcare Providers</h4>
+
+<p>Screenshot of "Hospitals Stuck with Windows XP": 600 Service Pack 0 Windows XP devices in the hospital!</p>
+
+<p>Average time to infection for healthcare devices:
+  - 12 days w/o protection
+  - 1 year w/ antivirus</p>
+
+<h4>Vendors are a common source of infection</h4>
+
+<p>USB drive is a common vector for infection.</p>
+
+<h4>Medical device signatures over download</h4>
+
+<p>"Click here to download software update"</p>
+
+<ul>
+<li>Website appears to contain malware</li>
+<li>Chrome: Safe web browsing service detected "ventilator" malware</li>
+</ul>
+
+<p>"Drug Compounder" example:</p>
+
+<ul>
+<li>Runs Windows XP embedded</li>
+<li><strong>FDA expects manufacturers to keep SW up to date</strong></li>
+<li><strong>Manufacturers claim cannot update because of FDA</strong>
+<ul>
+<li><em>double you tea f?</em></li>
+</ul></li>
+</ul>
+
+<h4>How significant intentional malicious SW malfunctions?</h4>
+
+<p>E.g. 1: Chicago 1982: Somebody inserts cyanide into Tylenol
+E.g. 2: Somebody posted flashing images on epillepsy support group website.</p>
+
+<h4>Why do you trust sensors?</h4>
+
+<p>E.g. smartphones. Batteryless sensors demo. Running on an MSP430. uC believes
+anything coming from ADC to uC. Possible to do something related to resonant
+freq. of wire there?</p>
+
+<p>Inject interference into the baseband</p>
+
+<ul>
+<li>Hard to filter in the analog</li>
+<li><code>=&gt;</code> Higher quality audio w/ interference than microphone</li>
+</ul>
+
+<p>Send a signal that matches resonant frequency of the wire.</p>
+
+<p>Treat circuit as unintentional demodulator</p>
+
+<ul>
+<li>Can use high frequency signal to trick uC into thinking</li>
+<li>there is a low frequency signal due to knowing interrupt
+frequency of uC and related properties.</li>
+</ul>
+
+<p>Cardiac devices vulnerable to baseband EMI</p>
+
+<ul>
+<li>Insert intentional EM interference in baseband</li>
+</ul>
+
+<p>Send pulsed sinewave to trick defibrilator into thinking heart beating correctly</p>
+
+<ul>
+<li>????? Works in vitro</li>
+<li>Hard to replicate in a body or saline solution</li>
+</ul>
+
+<p>Any defenses?</p>
+
+<ul>
+<li>Send an extra pacing pulse right after a beat
+<ul>
+<li>a real heart shouldn't send a response</li>
+</ul></li>
+</ul>
+
+<h4>Detecting malware at power outlets</h4>
+
+<p>Embedded system <code>&lt;--&gt;</code> WattsUpDoc <code>&lt;--&gt;</code> Power outlet</p>
+
+<h4>Bigger problems than security?</h4>
+
+<p><strong>Q:</strong> True or false: Hackers breaking into medical devices is
+the biggest risk at the moment.</p>
+
+<p><strong>A:</strong> False. Wide scale unavailability of patient care and integrity of
+medical sensors are more important.</p>
+
+<p>Security cannot be bolted on</p>
+
+<ul>
+<li>E.g. MRI on windows 95</li>
+<li>E.g. Pacemaker programmer running on OS/2</li>
+</ul>
+
+<p>Check gmail on medical devices, etc.</p>
+
+<p>Run pandora on medical machine.</p>
+
+<p>Keep clinical workflow predictable.</p>

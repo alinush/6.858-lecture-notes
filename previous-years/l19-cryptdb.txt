@@ -1,0 +1,269 @@
+Database security and CryptDB
+=============================
+
+1. Quick SQL recap
+------------------
+
+Databases are structured storage; a database consists of tables (or relations). For example:
+
+table emp:
+
+name  SSN  salary
+
+Alice  2   200
+Bob    3   50
+Chris  4   50
+
+table jobs:
+name   job
+
+Alice  boss
+
+Here are some basic SQL queries:
+
+SELECT *           FROM emp WHERE name = "Alice"    => selects all rows with name being "Alice" (this is the first row in emp)
+       name        FROM emp WHERE salary = 50       => selects all rows with salary being 50 (these are the last two rows in emp)
+                            WHERE salary > 50       => selects all rows with salary > 50 (this is the first row in emp) 
+                            ORDER BY name           => sorts rows by name (they are already sorted by name!)
+                            GROUP BY salary         => groups together rows that have the same salary value (they are already grouped by salary!)
+       sum(salary) FROM emp                         => selects the sum of the salaries (300)
+
+other operations: !=, DISTINCT, +, MAX, MIN, GREATEST, COUNT   
+
+How do you count the number of people with a salary of 100?
+SELECT count(*) FROM emp WHERE salary = 100;
+
+JOIN: puts together two tables by a common value
+- for example, I may want to view together the fields for Alice from emp and jobs
+SELECT * FROM emp, jobs WHERE emp.name = jobs.name
+Result is 
+name  SSN salary name   job
+Alice 2   200    Alice   boss
+
+- another example:  what is the salary of someone with the job boss:
+SELECT salary FROM emp, jobs WHERE emp.name = jobs.name AND job = "boss"
+
+Other types of queries:
+INSERT : inserts rows in a table
+DELETE : deletes rows
+UPDATE : updates rows
+
+
+2. Traditional DB security
+--------------------------
+
+Databases can store confidential information such as medical or financial information, 
+so we need ways to prevent data leakage or tampering.
+
+Most common DB security measures today are permissions and encryption of data at rest.
+
+1. Permissions: 
+  Users have accounts with the database.
+  
+  An administrator can set what each user can access.
+  GRANT <privilege list> ON <table name/view name> TO <user/role>
+         SELECT                                        e.g., Alice
+         INSERT
+         DELETE
+         UPDATE
+ 
+  There are also permissions for creating, dropping, and altering tables.
+
+2. Encrypting data at rest:
+   Protects against people stealing disks.
+   Key is usually at a centralized server, or provided by the client when connecting 
+   to the DB server.
+   The DB server keeps the key for the duration of a connection. 
+   To process a SQL query, the DB server decrypts the data and processes the query 
+   on the unencrypted data. Therefore, the DB server has access to unencrypted data.
+
+   Common mistakes to avoid: don't store the key on disk with encrypted data and don't 
+   backup unencrypted data :)
+
+
+Why are these measures not enough? What kind of attacks are still possible?
+- an attacker with access to the DB server can get the key or unencrypted data. 
+This is what CryptDB aims to prevent.
+
+
+3. CryptDB
+----------
+
+A database management system (DBMS) for protecting data confidentiality against
+attacks to the DB server.
+
+Use cases:
+-- consider a company that places the DB in the cloud but keeps the application
+in the local cluster. This happens for query analytics (e.g., some company has
+a lot of data about user activity and wants to learn what is the average response
+time of users, how popular some item was, etc.). Cloud administrators have root
+access to the DB servers and can see plaintext data at the server.
+-- also in the local cluster, one might want to remove the DB server from the
+trust perimeter.
+
+
+According to the Verizon Data Breach Investigations Report, internal agents were 
+involved in almost half of data breaches.
+
+Also, you heard the Snowden case..
+
+
+Concrete threat model:
+- DB server is under attack by a passive adversary (adversary can read all data, but does not 
+modify the DB or the query results)
+- Application is in a trusted location
+
+Approach:
+DB server sees *only* encrypted data
+DB server never gets the decryption key
+DB server processes SQL queries over encrypted data to provide DB functionality
+
+Therefore, even an adversary with root access to the DB server can only see encrypted data.
+
+Setup:
+CryptDB adds proxy on the application side.
+Proxy is:
+- trusted, stores a master key
+- does not store actual data, but only metadata such as the schema (e.g., table/column names)
+- encrypts queries from the application and sends them to the server
+- decrypts results from the DB server and gives them to the application
+- does not do any query execution -- the DB server executes the SQL queries
+
+How to compute on encrypted data?
+  One possibility: FHE (fully homomorphic encryption): an encryption schemes that supports
+  any function, has strong security. However, it is prohibitively impractical, currently 10^9 times slower
+  than regular computation => FHE not an option for DBs
+
+  
+  Instead we won't strive for general functionality. If we look at SQL operations, even though
+  there are more than 100, most of them can be implemented with a small set of basic operations:
+  get/put, +, >, =.
+
+  We will use a fast encryption scheme for each one of these. Turns out this can support almost
+  all SQL queries in practice.
+
+Set of encryption schemes
+--------------------------
+
+Scheme  | Functionality   |   SQL operation examples     |     Security
+-------------------------------------------------------------------------------------------------------------- 
+RND        get/put           select, insert, delete, count     semantic security (strong security notion, randomized)
+                                                               (roughly: given ciphertext, any two plaintexts are equally likely)
+HOM         +                       sum, +                     semantic
+SEARCH    keyword search        restricted LIKE                ~semantic
+DET         =                 GROUP BY, =, !=, DISTINCT        deterministic
+JOIN      = across columns          join by =                  deterministic
+OPE        >                ORDER BY, >=, MAX, MIN, GREATEST   only reveals order
+
+
+HOM has property that HOM(x) * HOM(y) mod n^2 = HOM(x+y), where n^2 is some value from the public key. So
+the DB server can perform this operation without needing to know some secret key.
+
+DET allows equality on encrypted data as on unencrypted data.
+
+OPE allows order on encrypted data as on unencrypted data.
+
+How to encrypt data with these?
+-----------------------------------
+- different queries perform different operations over the same data, 
+so need different encryption schemes
+- we don't know queries ahead of time
+
+Strawman solution: encrypt each data with each one of these separately
+  - main problem: security: reveal order for every column when an application may
+    never perform order on a certain column
+  - also wastes space 
+
+Solution: onions of encryptions
+  - stack encryption schemes:
+    - onion equality: RND(DET(JOIN(value)))
+    - onion order:    RND(OPE(value)) 
+    - onion add for integers: HOM(value)
+    - onion search for text: SEARCH(text)
+
+ - note that functionality increases as you go more towards the core of the onion
+ - security increases towards the outside of the onion: topmost schemes are (~) semantically secure
+ - different keys for different levels of the onion
+ 
+To execute "SELECT * from emp where salary = 100", what onion level do we need for salary? 
+- need DET, so remove RND
+
+ - adjust onion level by peeling off a level: proxy gives key to server for specific level; 
+   key can only decrypt that level
+ - lowest onion level not removed
+ - do not put back onion level so all future queries with same operations do not need to do peeling
+
+After removing RND, proxy rewrites query "SELECT * from emp where salary = 100" into
+SELECT * from salary where salary-eq = DET(JOIN(100)), 
+where salary-eq is the column containing the equality onion for salary.
+
+In fact, the proxy anonymizes names of tables and columns so the query looks like this:
+SELECT * from table1 where C3-eq = DET(JOIN(100))
+
+
+Why do we need three onions? Can we stack HOM on top of OPE?
+- not all encryption schemes are stackable; e.g. cannot use HOM on top of OPE for addition any more
+because it adds underlying OPE values
+
+
+Since encryption schemes cannot be combined arbitrarily, the proxy needs to rewrite queries
+carefully. A nontrivial example:
+
+SELECT sum(greatest(salary, 150)) FROM emp;
+
+gets rewritten by the proxy into:
+- adjust query: remove RND on onion order because we need OPE
+
+- new query:
+SELECT cryptdb_add(
+      if C3-ord >= OPE(150)   
+         return C3-add
+      else
+	 return HOM(150)
+) FROM table1;
+
+Basically, to implement the GREATEST operator, the proxy does the comparison based on OPE encryptions
+and then returns the corresponding homomorphic encryption so that cryptdb_add can do summation.
+
+
+Performance:
+-----------
+
+- practical because most operations happen on unencrypted data as on encrypted data
+- onion adjustment is infrequent, only when seeing a new operation
+- 26% throughput overhead on an industry benchmark as compared to vanilla MySQL
+  
+What queries it cannot support
+------------------------------
+- supports all queries on an industry benchmark and 99.5% of queries at a popular MySQL server
+
+- cannot support fancy math such as sine: SELECT * FROM .. WHERE sin(x) > y;
+
+- also, it cannot support simpler operations if they are nested in certain ways, 
+e.g. a+b>c: need HOM for a+b, but cannot compare HOM, need OPE for compare, but don't have OPE
+encryption of (a+b)
+
+Is CryptDB getting used?
+- new system (2011), starting to get used:
+  -- Google uses CryptDB's design to build the Encrypted BigQuery service (Enquirer) 
+  -- Lincoln Labs
+  -- SAP, sql.mit.edu, some startup
+
+
+DEMO
+----
+If interested, checkout the code and play with it: 
+http://css.csail.mit.edu/cryptdb/
+
+
+
+Multi-principal CryptDB
+-----------------------
+[this section was only discussed at a high level]
+- Multi-principal CryptDB tries to limit damage from proxy attacks
+- instead of having one master key at the proxy, each user has a user key that can 
+only decrypt that user's data
+- when logged in, each user provides their key to the proxy and query processing happens
+similarly to before
+- confidentiality guarantee: if a user is logged out during an attack, his/her data is safe
+- provides no guarantee for a logged in user during an attack 
