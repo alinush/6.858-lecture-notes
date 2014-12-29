@@ -1,0 +1,647 @@
+<h1>Capabilities and other protection mechanisms</h1>
+
+<h2>Confused deputy problem</h2>
+
+<h3>What's the problem the authors of "confused deputy" encountered?</h3>
+
+<ul>
+<li>Their system had a Fortran compiler, <code>/sysx/fort</code> (in Unix filename syntax)</li>
+<li>They wanted the Fortran compiler to record usage statistics, but where?
+<ul>
+<li>Created a special statistics file, <code>/sysx/stat</code>.</li>
+<li>Gave <code>/sysx/fort</code> "home files license" (kind-of like setuid w.r.t. /sysx)</li>
+</ul></li>
+<li>What goes wrong?
+<ul>
+<li>User can invoke the compiler asking it to write output to <code>/sysx/stat</code>.
+<ul>
+<li>e.g. <code>/sysx/fort</code> /my/code.f -o <code>/sysx/stat</code></li>
+</ul></li>
+<li>Compiler opens supplied path name, and succeeds, because of its license.</li>
+<li>User alone couldn't have written to that <code>/sysx/stat</code> file.</li>
+</ul></li>
+<li>Why isn't the <code>/sysx/fort</code> thing just a bug in the compiler?
+<ul>
+<li>Could, in principle, solve this by adding checks all over the place.</li>
+<li>Problem: need to add checks virtually everywhere files are opened.</li>
+<li>Perfectly correct code becomes buggy once it's part of a setuid binary.</li>
+</ul></li>
+<li>So what's the "confused deputy"?
+<ul>
+<li>The compiler is running on behalf of two principals:
+<ul>
+<li>the user principal (to open user's files)</li>
+<li>the compiler principal (to open compiler's files)</li>
+</ul></li>
+<li>Not clear what principal's privileges should be used at any given time.</li>
+</ul></li>
+</ul>
+
+<h3>Can we solve this confused deputy problem in Unix?</h3>
+
+<ul>
+<li>Suppose gcc wants to keep statistics in <code>/etc/gcc.stats</code></li>
+<li>Could have a special setuid program that only writes to that file
+<ul>
+<li>Not so convenient: can't just open the file like any other.</li>
+</ul></li>
+<li>What if we make gcc setuid to some non-root user (owner of stats file)?
+<ul>
+<li>Hard to access user's original files.</li>
+</ul></li>
+<li>What if gcc is setuid-root?  (Bad idea, but let's figure out why..)
+<ul>
+<li>Lots of potential for buffer overflows leading to root access.</li>
+<li>Need to instrument every place where gcc might open a file.</li>
+</ul></li>
+<li>What check should we perform when gcc is opening a file?
+<ul>
+<li>If it's an "internal" file (e.g. <code>/etc/gcc.stats</code>), maybe no check.</li>
+<li>If it's a user-supplied file, need to make sure user can access it.</li>
+<li>Can look at the permissions for the file in question.</li>
+<li>Need to also check permissions on directories leading up to this file.</li>
+</ul></li>
+<li>Potential problem: race conditions.
+<ul>
+<li>What if the file changes between the time we check it and use it?</li>
+<li>Common vulnerability: attacker replaces legit file with symlink</li>
+<li>Symlink could point to, say, <code>/etc/gcc.stats</code>, or <code>/etc/passwd</code>, or ...</li>
+<li>Known as "time-of-check to time-of-use" bugs (TOCTTOU).</li>
+</ul></li>
+</ul>
+
+<h3>Several possible ways of thinking of this problem:</h3>
+
+<ol>
+<li><em>Ambient authority:</em> privileges that are automatically used by process
+are the problem here.  No privileges should ever be used automatically.
+Name of an object should be also the privileges for accessing it.</li>
+<li><em>Complex permission checks:</em> hard for privileged app to replicate.
+With simpler checks, privileged apps might be able to correctly
+check if another user should have access to some object.</li>
+</ol>
+
+<h3>What are examples of ambient authority?</h3>
+
+<ul>
+<li>Unix UIDs, GIDs.</li>
+<li>Firewalls (IP address vs. privileges for accessing it)</li>
+<li>HTTP cookies (e.g. going to a URL like http://gmail.com)</li>
+</ul>
+
+<h3>How does naming an object through a capability help?</h3>
+
+<ul>
+<li>Pass file descriptor instead of passing a file name.</li>
+<li>No way to pass a valid FD unless caller was authorized to open that file.</li>
+</ul>
+
+<h3>Could we use file descriptors to solve our problem with a setuid gcc?</h3>
+
+<ul>
+<li>Sort-of: could make the compiler only accept files via FD passing.</li>
+<li>Or, could create a setuid helper that opens the <code>/etc/gcc.stats</code> file,
+passes an open file descriptor back to our compiler process.</li>
+<li>Then, can continue using this open file much like any other file.</li>
+<li>How to ensure only gcc can run this helper?
+<ul>
+<li>Make gcc setgid to some special group.</li>
+<li>Make the helper only executable to that special group.</li>
+<li>Make sure that group has no other privileges given to it.</li>
+</ul></li>
+</ul>
+
+<h2>What is the problem that the Capsicum authors are trying to solve with capabilities?</h2>
+
+<ul>
+<li>Reducing privileges of untrustworthy code in various applications.</li>
+<li>Overall plan:
+<ul>
+<li>Break up an application into smaller components.</li>
+<li>Reduce privileges of components that are most vulnerable to attack.</li>
+<li>Carefully design interfaces so one component can't compromise another.</li>
+</ul></li>
+<li>Why is this difficult?
+<ul>
+<li>Hard to reduce privileges of code ("sandbox") in traditional Unix system.</li>
+<li>Hard to give sandboxed code some limited access (to files, network, etc).</li>
+</ul></li>
+</ul>
+
+<h2>What sorts of applications might use sandboxing?</h2>
+
+<h3>OKWS</h3>
+
+<ul>
+<li>Programs that deal with network input:
+<ul>
+<li>Put input handling code into sandbox.</li>
+</ul></li>
+<li>Programs that manipulate data in complex ways:
+(gzip, Chromium, media codecs, browser plugins, ...)
+<ul>
+<li>Put complex (&amp; likely buggy) part into sandbox.</li>
+</ul></li>
+<li>How about arbitrary programs downloaded from the Internet?
+<ul>
+<li>Slightly different problem: need to isolate unmodified application code.</li>
+<li>One option: programmer writes their application to run inside sandbox.
+<ul>
+<li>Works in some cases: Javascript, Java, Native Client, ...</li>
+<li>Need to standardize on an environment for sandboxed code.</li>
+</ul></li>
+<li>Another option: impose new security policy on existing code.
+<ul>
+<li>Probably need to preserve all APIs that programmer was using.</li>
+<li>Need to impose checks on existing APIs, in that case.</li>
+<li>Unclear what the policy should be for accessing files, network, etc.</li>
+</ul></li>
+</ul></li>
+<li>Applications that want to avoid being tricked into misusing privileges?
+<ul>
+<li>Suppose two Unix users, Alice and Bob, are working on some project.</li>
+<li>Both are in some group <code>G</code>, and project <code>dir</code> allows access by that group.</li>
+<li>Let's say Alice emails someone a file from the project directory.</li>
+<li>Risk: Bob could replace the file with a symlink to Alice's private file.</li>
+<li>Alice's process will implicitly use Alice's ambient privileges to open.</li>
+<li>Can think of this as sandboxing an individual file operation.</li>
+</ul></li>
+</ul>
+
+<h2>What sandboxing plans (mechanisms) are out there (advantages, limitations)?</h2>
+
+<ul>
+<li>OS typically provides some kind of security mechanism ("primitive").
+<ul>
+<li>E.g., user/group IDs in Unix, as we saw in the previous lecture.</li>
+</ul></li>
+<li>For today, we will look at OS-level security primitives/mechanisms.
+<ul>
+<li>Often a good match when you care about protecting resources the OS manages.</li>
+<li>E.g., files, processes, coarse-grained memory, network interfaces, etc.</li>
+</ul></li>
+<li>Many OS-level sandboxing mechanisms work at the level of processes.
+<ul>
+<li>Works well for an entire process that can be isolated as a unit.</li>
+<li>Can require re-architecting application to create processes for isolation.</li>
+</ul></li>
+<li>Other techniques can provide finer-grained isolation (e.g., threads in proc).
+<ul>
+<li>Language-level isolation (e.g., Javascript).</li>
+<li>Binary instrumentation (e.g., Native Client).</li>
+<li>Why would we need these other sandboxing techniques?
+<ul>
+<li>Easier to control access to non-OS / finer-grained objects.</li>
+<li>Or perhaps can sandbox in an OS-independent way.
+OS-level isolation often used in conjunction with finer-grained isolation.</li>
+<li>Finer-grained isolation is often hard to get right (Javascript, NaCl).
+E.g., Native Client uses both a fine-grained sandbox + OS-level sandbox.</li>
+</ul></li>
+<li>Will look at these in more detail in later lectures.</li>
+</ul></li>
+</ul>
+
+<h3>Plan 0: Virtualize everything (e.g., VMs).</h3>
+
+<ul>
+<li>Run untrustworthy code inside of a virtualized environment.</li>
+<li>Many examples: x86 qemu, FreeBSD jails, Linux LXC, ..</li>
+<li>Almost a different category of mechanism: strict isolation.</li>
+<li>Advantage: sandboxed code inside VM has almost no interactions with outside.</li>
+<li>Advantage: can sandbox unmodified code that's not expecting to be isolated.</li>
+<li>Advantage: some VMs can be started by arbitrary users (e.g., qemu).</li>
+<li>Advantage: usually composable with other isolation techniques, extra layer.</li>
+<li>Disadvantage: hard to allow some sharing: no shared processes, pipes, files.</li>
+<li>Disadvantage: virtualizing everything often makes VMs relatively heavyweight.
+<ul>
+<li>Non-trivial CPU/memory overheads for each sandbox.</li>
+</ul></li>
+</ul>
+
+<h3>Plan 1: Discretionary Access Control (DAC).</h3>
+
+<ul>
+<li>Each object has a set of permissions (an access control list).
+<ul>
+<li>E.g., Unix files, Windows objects.</li>
+<li><em>"Discretionary"</em> means applications set permissions on objects (e.g., <code>chmod</code>).</li>
+</ul></li>
+<li>Each program runs with privileges of some principals.
+<ul>
+<li>E.g., Unix user/group IDs, Windows SIDs.</li>
+</ul></li>
+<li>When program accesses an object, check the program's privileges to decide.:</li>
+</ul>
+
+<p><em>"Ambient privilege":</em> privileges used implicitly for each access.</p>
+
+<pre><code>   Name              Process privileges
+     |                       |
+     V                       V
+   Object -&gt; Permissions -&gt; Allow?
+</code></pre>
+
+<ul>
+<li>How would you sandbox a program on a DAC system (e.g., Unix)?
+<ul>
+<li>Must allocate a new principal (user ID):
+<ul>
+<li>Otherwise, existing principal's privileges will be used implicitly!</li>
+</ul></li>
+<li>Prevent process from reading/writing other files:
+<ul>
+<li>Change permissions on every file system-wide?
+Cumbersome, impractical, requires root.</li>
+<li>Even then, new program can create important world-writable file.</li>
+<li>Alternative: <code>chroot</code> (again, have to be root).</li>
+</ul></li>
+<li>Allow process to read/write a certain file:
+<ul>
+<li>Set permissions on that file appropriately, if possible.</li>
+<li>Link/move file into the <code>chroot</code> directory for the sandbox?</li>
+</ul></li>
+<li>Prevent process from accessing the network:
+<ul>
+<li>No real answer for this in Unix.</li>
+<li>Maybe configure firewall?  But not really process-specific.</li>
+</ul></li>
+<li>Allow process to access particular network connection:
+<ul>
+<li>See above, no great plan for this in Unix.</li>
+</ul></li>
+<li>Control what processes a sandbox can kill / debug / etc:
+<ul>
+<li>Can run under the same UID, but that may be too many privileges.</li>
+<li>That UID might also have other privileges..</li>
+</ul></li>
+</ul></li>
+<li><strong>Problem:</strong> only root can create new principals, on most DAC systems.
+<ul>
+<li>E.g., Unix, Windows.</li>
+</ul></li>
+<li><strong>Problem:</strong> some objects might not have a clear configurable access control list.
+<ul>
+<li>Unix: processes, network, ...</li>
+</ul></li>
+<li><strong>Problem:</strong> permissions on files might not map to policy you want for sandbox.
+<ul>
+<li>Can sort-of work around using <code>chroot</code> for files, but awkward.</li>
+</ul></li>
+<li><strong>Related problem:</strong> performing some operations with a subset of privileges.
+<ul>
+<li>Recall example with Alice emailing a file out of shared group directory.
+<ul>
+<li>"Confused deputy problem": program is a "deputy" for multiple principals.</li>
+</ul></li>
+<li><em>One solution:</em> check if group permissions allow access (manual, error-prone).</li>
+<li><em>Alternative solution:</em> explicitly specify privileges for each operation.
+<ul>
+<li>Capabilities can help: capability (e.g., fd) combines object + privileges.</li>
+<li>Some Unix features incompat. w/ pure capability design (symlinks by name).</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h3>Plan 2: Mandatory Access Control (MAC).</h3>
+
+<ul>
+<li>In DAC, security policy is set by applications themselves (chmod, etc).</li>
+<li>MAC tries to help users / administrators specify policies for applications.
+<ul>
+<li><em>"Mandatory"</em> in the sense that applications can't change this policy.</li>
+<li>Traditional MAC systems try to enforce military classified levels.</li>
+</ul></li>
+</ul>
+
+<p><em>Example:</em> Ensure top-secret programs can't reveal classified information.</p>
+
+<pre><code>   Name    Operation + caller process
+     |               |
+     V               V
+   Object --------&gt; Allow?
+                     ^
+                     |
+   Policy ------------+
+</code></pre>
+
+<ul>
+<li><em>Note:</em> many systems have aspects of both DAC + MAC in them.
+<ul>
+<li>E.g., Unix user IDs are "DAC", but one can argue firewalls are "MAC".</li>
+<li>Doesn't really matter -- good to know the extreme points in design space.</li>
+</ul></li>
+<li>Windows Mandatory Integrity Control (MIC) / LOMAC in FreeBSD.
+<ul>
+<li>Keeps track of an "integrity level" for each process.</li>
+<li>Files have a minimum integrity level associated with them.</li>
+<li>Process cannot write to files above its integrity level.
+<ul>
+<li>Internet Explorer in Windows Vista runs as low integrity, cannot overwrite system files.</li>
+</ul></li>
+<li>FreeBSD LOMAC also tracks data read by processes.
+<ul>
+<li>(Similar to many information-flow-based systems.)</li>
+<li>When process reads low-integrity data, it becomes low integrity too.</li>
+<li>Transitive, prevents adversary from indirectly tampering with files.</li>
+</ul></li>
+<li>Not immediately useful for sandboxing: only a fixed number of levels.</li>
+</ul></li>
+<li>SElinux
+<ul>
+<li><em>Idea:</em> system administrator specifies a system-wide security policy.</li>
+<li>Policy file specifies whether each operation should be allowed or denied.</li>
+<li>To help decide whether to allow/deny, files labeled with "types".
+<ul>
+<li>(Yet another integer value, stored in inode along w/ uid, gid, ..)</li>
+</ul></li>
+</ul></li>
+<li>Mac OS X sandbox ("Seatbelt") and Linux <code>seccomp_filter</code>.
+<ul>
+<li>Application specifies policy for whether to allow/deny each syscall.
+<ul>
+<li>(Written in LISP for MacOSX's mechanism, or in BPF for Linux's.)</li>
+</ul></li>
+<li>Can be difficult to determine security impact of syscall based on args.
+<ul>
+<li>What does a pathname refer to? Symlinks, hard links, race conditions, ..</li>
+<li>(Although MacOSX's sandbox provides a bit more information)</li>
+</ul></li>
+<li><strong>_Advantage:</strong> any user can sandbox an arbitrary piece of code, finally!</li>
+<li><strong>Limitation:</strong> programmer must separately write the policy + application code.</li>
+<li><strong>Limitation:</strong> some operations can only be filtered at coarse granularity.
+<ul>
+<li>E.g., POSIX <code>shm</code> in MacOSX's filter language, according to Capsicum paper.</li>
+</ul></li>
+<li>Limitation: policy language might be awkward to use, stateless, etc.
+<ul>
+<li>E.g., what if app should have exactly one connection to some server?</li>
+</ul></li>
+<li><em>Note:</em> <code>seccomp_filter</code> is quite different from regular/old <code>seccomp</code>,
+and the Capsicum paper talks about the regular/old <code>seccomp</code>.</li>
+</ul></li>
+<li>Is it a good idea to separate policy from application code?
+<ul>
+<li>Depends on overall goal.</li>
+<li>Potentially good if user/admin wants to look at or change policy.</li>
+<li>Problematic if app developer needs to maintain both code and policy.</li>
+<li>For app developers, might help clarify policy.</li>
+<li>Less-centralized "MAC" systems (Seatbelt, <code>seccomp</code>) provide a compromise.</li>
+</ul></li>
+</ul>
+
+<h3>Plan 3: Capabilities (Capsicum).</h3>
+
+<ul>
+<li>Different plan for access control: capabilities.
+<ul>
+<li>If process has a handle for some object ("capability"), can access it.
+<ul>
+<li><code>Capability --&gt; Object</code></li>
+</ul></li>
+<li>No separate question of privileges, access control lists, policies, etc.
+<ul>
+<li>E.g.: file descriptors on Unix are a capability for a file.</li>
+<li>Program can't make up a file descriptor it didn't legitimately get.
+<ul>
+<li><strong>Why not?</strong> OS creates and manages FDs. No way for an application to forge
+a file descriptor. It would have to write OS memory via a vulnerability.</li>
+</ul></li>
+<li>Once file is open, can access it; checks happened at open time.</li>
+<li>Can pass open files to other processes.
+<ul>
+<li>FDs also help solve "time-of-check to time-of-use" (TOCTTOU) bugs.</li>
+</ul></li>
+</ul></li>
+<li>Capabilities are usually ephemeral: not part of on-disk inode.
+<ul>
+<li>Whatever starts the program needs to re-create capabilities each time.</li>
+</ul></li>
+</ul></li>
+<li>Global namespaces
+<ul>
+<li>Why are these guys so fascinated with eliminating global namespaces?</li>
+<li>Global namespaces require some access control story (e.g., ambient privileges).</li>
+<li>Hard to control sandbox's access to objects in global namespaces.</li>
+</ul></li>
+<li>Kernel changes
+<ul>
+<li>Just to double-check: why do we need kernel changes?
+<ul>
+<li>Can we implement everything in a library (and LD_PRELOAD it)?</li>
+<li>Need OS to deny the application access to the global namespace once
+it entered capability mode</li>
+</ul></li>
+<li>Represent more things as file descriptors: processes (pdfork).
+<ul>
+<li>Good idea in general.</li>
+</ul></li>
+<li><em>Capability mode:</em> once process enters <em>cap mode</em>, cannot leave it (including all children).</li>
+<li>In capability mode, can only use file descriptors -- no global namespaces.
+<ul>
+<li>Cannot open files by full path name: no need for <code>chroot</code> as in OKWS.</li>
+<li>Can still open files by relative path name, given fd for dir (<code>openat</code>).</li>
+</ul></li>
+<li>Cannot use ".." in path names or in symlinks: why not?
+<ul>
+<li>In principle, ".." might be fine, as long as ".." doesn't go too far.</li>
+<li>Hard to enforce correctly.</li>
+<li>Hypothetical design:
+<ul>
+<li>Prohibit looking up ".." at the root capability.</li>
+<li>No more ".." than non-".." components in path name, ignoring ".".</li>
+<li>Assume a process has capability <code>C1</code> for <code>/foo</code>.</li>
+<li>Race condition, in a single process with 2 threads:</li>
+</ul></li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p>Race condition example:</p>
+
+<pre><code>    T1: mkdir(C1, "a/b/c")
+    T1: C2 = openat(C1, "a")
+    T1: C3 = openat(C2, "b/c/../..")   # should return a cap for /foo/a
+        Let openat() run until it's about to look up the first ".."
+
+    T2: renameat(C1, "a/b/c", C1, "d")
+
+    T1: Look up the first "..", which goes to "/foo"
+        Look up the second "..", which goes to "/"
+</code></pre>
+
+<ul>
+<li>...
+<ul>
+<li>Do Unix permissions still apply?
+<ul>
+<li>Yes -- can't access all files in dir just because you have a cap for dir.</li>
+<li>But intent is that sandbox shouldn't rely on Unix permissions.</li>
+</ul></li>
+<li>For file descriptors, add a wrapper object that stores allowed operations.</li>
+<li>Where does the kernel check capabilities?
+<ul>
+<li>One function in kernel looks up fd numbers -- modified it to check caps.</li>
+<li>Also modified <code>namei</code> function, which looks up path names.</li>
+<li><strong>Good practice:</strong> look for narrow interfaces, otherwise easy to miss checks</li>
+</ul></li>
+</ul></li>
+<li>libcapsicum
+<ul>
+<li>Why do application developers need this library?</li>
+<li>Biggest functionality: starting a new process in a sandbox.</li>
+</ul></li>
+<li>fd lists
+<ul>
+<li>Mostly a convenient way to pass lots of file descriptors to child process.</li>
+<li>Name file descriptors by string instead of hard-coding an fd number</li>
+</ul></li>
+<li><code>cap_enter()</code> vs <code>lch_start()</code>
+<ul>
+<li>What are the advantages of sandboxing using <code>exec</code> instead of <code>cap_enter</code>?</li>
+<li>Leftover data in memory: e.g., private keys in OpenSSL/OpenSSH.</li>
+<li>Leftover file descriptors that application forgot to close.</li>
+<li>Figure 7 in paper: <code>tcpdump</code> had privileges on <code>stdin</code>, <code>stdout</code>, <code>stderr</code>.</li>
+<li>Figure 10 in paper: <code>dhclient</code> had a raw socket, <code>syslogd</code> pipe, lease file.</li>
+</ul></li>
+<li><strong>Advantages:</strong> any process can create a new sandbox.
+<ul>
+<li>(Even a sandbox can create a sandbox.)</li>
+</ul></li>
+<li><strong>Advantages:</strong> fine-grained control of access to resources (if they map to FDs).
+<ul>
+<li>Files, network sockets, processes.</li>
+</ul></li>
+<li><strong>Disadvantage:</strong> weak story for keeping track of access to persistent files.</li>
+<li><strong>Disadvantage:</strong> prohibits global namespaces, requires writing code differently.</li>
+</ul>
+
+<h3>Alternative capability designs: pure capability-based OS (KeyKOS, etc).</h3>
+
+<ul>
+<li>Kernel only provides a message-passing service.</li>
+<li>Message-passing channels (very much like file descriptors) are capabilities.</li>
+<li>Every application has to be written in a capability style.</li>
+<li>Capsicum claims to be more pragmatic: some applications need not be changed.</li>
+</ul>
+
+<h3>Linux capabilities: solving a different problem.</h3>
+
+<ul>
+<li>Trying to partition root's privileges into finer-grained privileges.</li>
+<li>Represented by various capabilities: <code>CAP_KILL, CAP_SETUID</code>, <code>CAP_SYS_CHROOT</code>, ..</li>
+<li>Process can run with a specific capability instead of all of root's privs.</li>
+<li>Ref: <a href="http://linux.die.net/man/7/capabilities">capabilities(7)</a></li>
+</ul>
+
+<h2>Using Capsicum in applications</h2>
+
+<ul>
+<li><em>Plan:</em> ensure sandboxed process doesn't use path names or other global NSes.
+<ul>
+<li>For every directory it might need access to, open FD ahead of time.</li>
+<li>To open files, use <code>openat()</code> starting from one of these directory FDs.
+<ul>
+<li>.. programs that open lots of files all over the place may be cumbersome.</li>
+</ul></li>
+</ul></li>
+<li><code>tcpdump</code>
+<ul>
+<li>2-line version: just <code>cap_enter()</code> after opening all FDs.</li>
+<li>Used <code>procstat</code> to look at resulting capabilities.</li>
+<li>8-line version: also restrict <code>stdin</code>/<code>stdout</code>/<code>stderr</code>.</li>
+<li>Why? Avoid reading <code>stderr</code> log, changing terminal settings, ...</li>
+</ul></li>
+<li><code>dhclient</code>
+<ul>
+<li>Already privilege-separated, using Capsicum to reinforce sandbox (2 lines).</li>
+</ul></li>
+<li><code>gzip</code>
+<ul>
+<li>Fork/exec sandboxed child process, feed it data using RPC over pipes.</li>
+<li>Non-trivial changes, mostly to marshal/unmarshal data for RPC: 409 LoC.</li>
+<li><em>Interesting bug:</em> forgot to propagate compression level at first.</li>
+</ul></li>
+<li><code>Chromium</code>
+<ul>
+<li>Already privilege-separated on other platforms (but not on FreeBSD).</li>
+<li>~100 LoC to wrap file descriptors for sandboxed processes.</li>
+</ul></li>
+<li><code>OKWS</code>
+<ul>
+<li>What are the various answers to the homework question?</li>
+</ul></li>
+</ul>
+
+<h2>Does Capsicum achieve its goals?</h2>
+
+<ul>
+<li>How hard/easy is it to use?
+<ul>
+<li>Using Capsicum in an application almost always requires app changes.
+<ul>
+<li>(Many applications tend to open files by pathname, etc.)</li>
+<li>One exception: Unix pipeline apps (filters) that just operate on FDs.</li>
+</ul></li>
+<li>Easier for streaming applications that process data via FDs.</li>
+<li>Other sandboxing requires similar changes (e.g., <code>dhclient</code>, Chromium).</li>
+<li>For existing applications, lazy initialization seems to be a problem.
+<ul>
+<li>No general-purpose solution -- either change code or initialize early.</li>
+</ul></li>
+<li>Suggested plan: sandbox and see what breaks.
+<ul>
+<li>Might be subtle: <code>gzip</code> compression level bug.</li>
+</ul></li>
+</ul></li>
+<li>What are the security guarantees it provides?
+<ul>
+<li>Guarantees provided to app developers: sandbox can operate only on open FDs.</li>
+<li>Implications depend on how app developer partitions application, FDs.</li>
+<li>User/admin doesn't get any direct guarantees from Capsicum.</li>
+<li>Guarantees assume no bugs in FreeBSD kernel (lots of code), and that
+the Capsicum developers caught all ways to access a resource not via FDs.</li>
+</ul></li>
+<li>What are the performance overheads? (CPU, memory)
+<ul>
+<li>Minor overheads for accessing a file descriptor.</li>
+<li>Setting up a sandbox using <code>fork</code>/<code>exec</code> takes <code>O(1msec)</code>, non-trivial.</li>
+<li>Privilege separation can require RPC / message-passing, perhaps noticeable.</li>
+</ul></li>
+<li>Adoption?
+<ul>
+<li>In FreeBSD's kernel now, enabled by default (as of FreeBSD 10).</li>
+<li>A handful of applications have been modified to use Capsicum.
+<code>dhclient</code>, <code>tcpdump</code>, and a few more since the paper was written.
+<a href="http://www.cl.cam.ac.uk/research/security/capsicum/freebsd.html">Ref</a></li>
+<li>Casper daemon to help applications perform non-capability operations.
+E.g., DNS lookups, look up entries in <code>/etc/passwd</code>, etc.
+<a href="http://people.freebsd.org/~pjd/pubs/Capsicum_and_Casper.pdf">Ref</a></li>
+<li>There's a port of Capsicum to Linux (but not in upstream kernel repo).</li>
+</ul></li>
+</ul>
+
+<h2>What applications wouldn't be a good fit for Capsicum?</h2>
+
+<ul>
+<li>Apps that need to control access to non-kernel-managed objects.
+<ul>
+<li>E.g.: X server state, DBus, HTTP origins in a web browser, etc.</li>
+<li>E.g.: a database server that needs to ensure DB file is in correct format.</li>
+<li>Capsicum treats pipe to a user-level server (e.g., X server) as one cap.</li>
+</ul></li>
+<li>Apps that need to connect to specific TCP/UDP addresses/ports from sandbox.
+<ul>
+<li>Capsicum works by only allowing operations on existing open FDs.</li>
+<li>Need some other mechanism to control what FDs can be opened.</li>
+<li>Possible solution: helper program can run outside of capability mode,
+open TCP/UDP sockets for sandboxed programs based on policy.</li>
+</ul></li>
+</ul>
+
+<h2>References</h2>
+
+<ul>
+<li><a href="http://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf">Apple sandbox guide</a></li>
+<li><a href="http://git.kernel.org/?p=linux/kernel/git/torvalds/linux-2.6.git;a=blob;f=Documentation/prctl/seccomp_filter.txt;hb=HEAD">seccomp_filter</a></li>
+<li><a href="http://en.wikipedia.org/wiki/Mandatory_Integrity_Control">Mandatory integrity control</a></li>
+</ul>
