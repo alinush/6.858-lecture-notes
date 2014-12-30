@@ -16,7 +16,9 @@ Lecture notes from 6.858, taught by [Prof. Nickolai Zeldovich](http://people.csa
  * Lecture **11**: _Guest lecture_ on _Ur/Web_ by Prof. Adam Chlipala, MIT, CSAIL
  * Lecture **12**: [TCP/IP security](l12-tcpip.html): threat model, sequence numbers and attacks, connection hijacking attacks, SYN flooding, bandwidth amplification attacks, routing
  * Lecture **13**: [Kerberos](l13-kerberos.html): Kerberos architecture and trust model, tickets, authenticators, ticket granting servers, password-changing, replication, network attacks, forward secrecy
- * Lecture **14**: [ForceHTTPS](l14-forcehttps.html): ForceHTTPS
+ * Lecture **14**: [ForceHTTPS](l14-forcehttps.html): certificates, HTTPS, Online Certificate Status Protocol (OCSP), ForceHTTPS
+
+<!--
  * Lecture **15**: _Guest lecture_ on _medical software_ by Prof. Kevin Fu, U. Michigan
  * Lecture **16**: [Timing attacks](l16-timing-attacks.html): timing attacks
  * Lecture **17**: [User authentication](l17-authentication.html): what you have, what you know, what you are
@@ -27,3 +29,4 @@ Lecture notes from 6.858, taught by [Prof. Nickolai Zeldovich](http://people.csa
  * Lecture **21**: [Information flow tracking](l21-taintdroid.html): TaintDroid
  * Lecture **22**: _Guest lecture_ on _MIT's IS&T_ by Mark Silis and David LaPorte
  * Lecture **23**: [Security economics](l23-click-trajectories.html): spam value chain
+-->
