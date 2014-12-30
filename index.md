@@ -1,7 +1,7 @@
 Computer systems security notes (6.858, Fall 2014)
 ==================================================
 
-Lecture notes from 6.858, taught by [Prof. Nickolai Zeldovich](http://people.csail.mit.edu/nickolai/) and [Prof. James Mickens](http://research.microsoft.com/en-us/people/mickens/).
+Lecture notes from 6.858, taught by [Prof. Nickolai Zeldovich](http://people.csail.mit.edu/nickolai/) and [Prof. James Mickens](http://research.microsoft.com/en-us/people/mickens/) in 2014. These lecture notes are slightly modified from the ones posted on the 6.858 [course website](http://css.csail.mit.edu/6.858/2014/schedule.html).
 
  * Lecture **1**: [Introduction](l01-intro.html): what is security, what's the point, no perfect security, policy, threat models, assumptions, mechanism, buffer overflows
  * Lecture **2**: [Control hijacking attacks](l02-baggy.html): buffer overflows, stack canaries, bounds checking, electric fences, fat pointers, shadow data structure, Jones & Kelly, baggy bounds checking
@@ -17,14 +17,14 @@ Lecture notes from 6.858, taught by [Prof. Nickolai Zeldovich](http://people.csa
  * Lecture **12**: [TCP/IP security](l12-tcpip.html): threat model, sequence numbers and attacks, connection hijacking attacks, SYN flooding, bandwidth amplification attacks, routing
  * Lecture **13**: [Kerberos](l13-kerberos.html): Kerberos architecture and trust model, tickets, authenticators, ticket granting servers, password-changing, replication, network attacks, forward secrecy
  * Lecture **14**: [ForceHTTPS](l14-forcehttps.html): certificates, HTTPS, Online Certificate Status Protocol (OCSP), ForceHTTPS
+ * Lecture **15**: _Guest lecture_ on _medical software_ by Prof. Kevin Fu, U. Michigan
+ * Lecture **19**: _Guest lecture_ on _Tor_ by Nick Mathewson, Tor Project
+   + 6.858 notes from 2012 on [Anonymous communication](l19-tor.html): Tor
 
 <!--
- * Lecture **15**: _Guest lecture_ on _medical software_ by Prof. Kevin Fu, U. Michigan
  * Lecture **16**: [Timing attacks](l16-timing-attacks.html): timing attacks
  * Lecture **17**: [User authentication](l17-authentication.html): what you have, what you know, what you are
  * Lecture **18**: [Private browsing](l18-priv-browsing.html): private browsing modes
- * Lecture **19**: _Guest lecture_ on _Tor_ by Nick Mathewson, Tor Project
-   + 6.858 notes from 2012 on [Anonymous communication](l19-tor.html): Tor
  * Lecture **20**: [Mobile phone security](l20-android.html): Android
  * Lecture **21**: [Information flow tracking](l21-taintdroid.html): TaintDroid
  * Lecture **22**: _Guest lecture_ on _MIT's IS&T_ by Mark Silis and David LaPorte

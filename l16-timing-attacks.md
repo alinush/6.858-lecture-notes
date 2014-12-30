@@ -1,8 +1,10 @@
 Side-channel attacks on RSA
 ===========================
+**Note:** These lecture notes were slightly modified from the ones posted on the 6.858 [course website](http://css.csail.mit.edu/6.858/2014/schedule.html) from 2014.
 
 Side channel attacks: historically worried about EM signals leaking.
-  [ Ref: http://cryptome.org/nsa-tempest.pdf ]
+
+  [Ref](http://cryptome.org/nsa-tempest.pdf)
   Broadly, systems may need to worry about many unexpected ways in which
     information can be revealed.
 

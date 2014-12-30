@@ -1,6 +1,9 @@
-6.858: TAINT TRACKING
+Taint tracking
+==============
+**Note:** These lecture notes were slightly modified from the ones posted on the 6.858 [course website](http://css.csail.mit.edu/6.858/2014/schedule.html) from 2014.
 
 What problem does the paper try to solve?
+
    -Applications can exfiltrate a user's private
     data and send it to some server.
    -High-level approach: keep track of which

@@ -1,7 +1,11 @@
 Web security
 ============
+**Note:** These lecture notes were slightly modified from the ones posted on the 6.858 [course website](http://css.csail.mit.edu/6.858/2014/schedule.html) from 2014.
 
-What is the web? In the old days, it was a
+What is the web?
+----------------
+
+In the old days, it was a
 simple client/server architecture (client
 was your web browser, server was a machine
 on the network that could deliver static
@@ -69,6 +73,9 @@ computation! But what does this mean for security?
      with their friends.
    + If you want to understand the horror, go to
      [QuirksMode](http://quirksmode.org)
+
+Client-side web applications
+----------------------------
 
 In this lecture, we're going to **focus on the
 client-side of a web application**. In particular,
@@ -141,7 +148,10 @@ within the same browser.
 To answer these questions, browsers use a security
 model called the **same-origin policy**.
 
- * Vague goal: Two different websites should not
+Same-origin policy
+------------------
+
+ * _Vague goal:_ Two different websites should not
    be able to tamper with each other's content.
  * Easy to state, but tricky to implement.
    * Obviously bad: If I have two different

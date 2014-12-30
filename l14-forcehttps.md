@@ -1,5 +1,6 @@
 SSL/TLS and HTTPS
 =================
+**Note:** These lecture notes were slightly modified from the ones posted on the 6.858 [course website](http://css.csail.mit.edu/6.858/2014/schedule.html) from 2014.
 
 This lecture is about two related topics:
 

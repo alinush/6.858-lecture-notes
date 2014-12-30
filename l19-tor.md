@@ -1,7 +1,9 @@
 Tor
 ===
+**Note:** These lecture notes were slightly modified from the ones posted on the 6.858 [course website](http://css.csail.mit.edu/6.858/2014/schedule.html) from 2014.
 
 What's the goal of the paper (or Tor)?
+--------------------------------------
 
  - Anonymity for clients, which want to connect to servers on the internet.
  - Anonymity for servers, which want to service requests from users.
@@ -11,6 +13,7 @@ What's the goal of the paper (or Tor)?
    + That is, Tor not designed to prevent adversary from finding Tor users.
 
 How to achieve anonymity?
+-------------------------
 
  - Must encrypt traffic to/from the person that wants to be anonymous.
    + Otherwise, adversary looks at packets and figures out what's going on.
@@ -26,6 +29,7 @@ How to achieve anonymity?
  - So, approach: relay traffic via intermediary that encrypts/decrypts.
 
 Why do we need more than one node?
+----------------------------------
 
  - Scalability: handle more traffic than a single node.
  - Compromise: attacker learns info about direct clients of compromised node.
@@ -39,7 +43,8 @@ Why do we need more than one node?
    + For instance, may suffice to observe first and last node.
    + Attacker can also inject timing info (by delaying packets) to analyze.
 
-Main idea: onion routing.
+Main idea: onion routing
+------------------------
 
  - Mesh of onion routers (ORs) in the network.
  - Assumption: client knows public keys of all ORs.
@@ -53,6 +58,7 @@ Main idea: onion routing.
    + With two ORs, compromising a single OR does not break anonymity.
 
 At what level should we relay things?
+-------------------------------------
 
  - Could do any level -- IP packets, TCP connections, application-level (HTTP)
  - What's the advantage / disadvantage?
@@ -75,8 +81,8 @@ At what level should we relay things?
      * Hard to do in practice; app-specific proxies are useful (e.g., Privoxy).
      * Demo of browser "identification": https://panopticlick.eff.org/
 
-Tor design.
-
+Tor design
+----------
  - Mesh of ORs: every OR connected via SSL/TLS to every other OR.
    + Don't need CA-signed SSL/TLS certs.
    + Tor has its own public key checking plan using directory servers.
@@ -106,7 +112,7 @@ Tor design.
      * Attacker may narrow down user's identity based on dir info.
      * User that saw one set of directory messages will use certain ORs.
 
-Terminology: circuits and streams.
+### Terminology: circuits and streams.
 
  - Circuit: a path through a list of ORs that a client builds up.
    + Circuits exist for some period of time (perhaps a few minutes).
@@ -119,7 +125,7 @@ Terminology: circuits and streams.
    + Adversary may correlate multiple streams in a single circuit.
    + Tie a single user's connections to different sites, break anonymity.
 
-Tor circuits.
+### Tor circuits
 
  - Circuit is a sequence of ORs, along with shared (symmetric AES) keys.
    + ORs `c_1, c_2, .., c_n`
@@ -153,7 +159,7 @@ Tor circuits.
  - CMD field for TCP data is "relay data".
  - Other values like "relay begin", .. used to set up streams.
 
-How does the OP send data via circuit?
+### How does the OP send data via circuit?
 
  - Compose relay packet as above (not encrypted yet).
  - Compute a valid checksum (digest).
@@ -165,12 +171,12 @@ How does the OP send data via circuit?
  - Send encrypted cell to the first OR (`c_1`).
    + (Effectively reverse process for OP receiving data via circuit.)
 
-What does an OR do with relay packets?
+### What does an OR do with relay packets?
 
  - If it's coming from OP's direction, decrypt and forward away from OP
  - If it's coming not from OP's direction, encrypt and forward towards OP
 
-How does an OR know if a relay packet is destined to it or not?
+### How does an OR know if a relay packet is destined to it or not?
 
  - Verify checksum: if matches, most likely meant for the current OR.
  - Optimization: first 2 bytes of digest should be zero.
@@ -180,17 +186,17 @@ How does an OR know if a relay packet is destined to it or not?
    + Packet size independent of path length.
    + Only the last OR knows the destination.
 
-How to establish a new stream?
+### How to establish a new stream?
 
  - OP sends a "relay begin" via circuit. - Contains target hostname, port.
  - Who picks stream ID? - OP can choose arbitrary stream ID in its circuit.
 
-What is the "leaky pipe" topology?
+### What is the "leaky pipe" topology?
 
  - OP can send relay messages to any OR along its circuit (not just the last OR).
  - Can build stream (i.e., TCP connection) via any OR, to foil traffic analysis.
 
-Initializing circuits.
+### Initializing circuits
 
  - OP picks the sequence of ORs to use for its circuit.
    + Why have the OP do this? - Resistance to other ORs "diverting" the circuit.
@@ -225,19 +231,19 @@ Initializing circuits.
    + Ensures cells are always fixed size.
    + Last OR in the old circuit needs to know the new OR & circuit IDs.
 
-What state does each OR keep for each circuit that passes through it?
+### What state does each OR keep for each circuit that passes through it?
 
  - Circuit ID and neighbor OR for two directions in the circuit (to/from OP).
  - Shared key with OP for this circuit and this OR.
  - SHA-1 state for each circuit.
 
-Can we avoid storing all of this state in the network?
+### Can we avoid storing all of this state in the network?
 
  - Not without a variable-length path descriptor in each cell.
  - Exit node would likewise need a path descriptor to know how to send back.
  - Intermediate nodes would need to perform public-key crypto (expensive).
 
-Why does Tor need exit policies?
+### Why does Tor need exit policies?
 
  - Preventing abuse (e.g., anonymously sending spam).
  - Exit policies similar to firewall rules (e.g., cannot connect to port 25).
@@ -246,19 +252,19 @@ Why does Tor need exit policies?
    + Not used for enforcement.
    + OP needs to know what exit nodes are likely to work.
 
-What if Tor didn't do integrity checking?
+### What if Tor didn't do integrity checking?
 
  - Need integrity to prevent a tagging attack.
  - Attacker compromises internal node, corrupts data packets.
  - Corrupted packets will eventually get sent out, can watch where they go.
 
-How does Tor prevent replays?
+### How does Tor prevent replays?
 
  - Each checksum is actually checksum of all previous cells between OP & OR.
  - Checksum for same data sent again would be different.
  - Works well because underlying transport is reliable (SSL/TLS over TCP).
 
-Anonymous services.
+### Anonymous services
 
  - Hidden services named by public keys (pseudo-DNS name "publickey.onion").
  - Why the split between introduction and rendezvous point?
@@ -284,7 +290,7 @@ Anonymous services.
    + Each can control their own level of anonymity.
    + Neither knows the full path of the other circuit.
 
-Potential pitfalls when using Tor?
+### Potential pitfalls when using Tor?
 
  - Application-level leaks (Javascript, HTTP headers, DNS, ..)
    + Use an app-level proxy (e.g., Privoxy strips many HTTP headers).
@@ -294,19 +300,19 @@ Potential pitfalls when using Tor?
    + Quantization from fixed-size cells helps a bit.
  - Malicious ORs: join network, advertise lots of bandwidth, open exit policy.
 
-Benefits / risks of running an OR?
+### Benefits / risks of running an OR?
 
-Benefits:
+**Benefits:**
 
  + more anonymity
 
-Risks:
+**Risks:**
 
  - resource use
  - online attacks (DoS, break-ins, ..)
  - offline attacks (e.g., machine seized by law enforcement)
 
-How hard is it to block Tor?
+### How hard is it to block Tor?
 
  - Find list of OR IPs from directory, block all traffic to them.
  - How to defend against such an attack?
@@ -324,7 +330,7 @@ How hard is it to block Tor?
    + For email, easier for adversary to create fake identities (email addrs).
    + Tor trusts 3 mail providers to rate-limit signup (gmail, yahoo, mit).
 
-Would you use Tor? - What applications is it good for?
+### Would you use Tor? What applications is it good for?
 
  - Might be too slow to use for all traffic (high latency).
  - But unfortunately that means only sensitive traffic would go via Tor.
@@ -332,7 +338,7 @@ Would you use Tor? - What applications is it good for?
  - Maybe a good way to avoid denial-of-service attacks (i.e., offload to Tor).
  - Allegedly, Google used Tor to check if servers special-case Google's IPs.
 
-How active is Tor?
+### How active is Tor?
 
  - Much more active use now than what the paper describes.
    * ~3000 public ORs, ~1000 exit nodes, ~1000 bridge nodes, ~2GB/s OR bandwidth.
@@ -340,7 +346,7 @@ How active is Tor?
  - Hard problems: distributing entry point IPs, approving ORs, ..
  - Some BitTorrent use, but not overwhelming: mostly, too slow for large files.
 
-Alternative approach: DC-nets ("Dining cryptographer networks").
+### Alternative approach: DC-nets ("Dining cryptographer networks").
 
  - N participants, but suppose there's only one sender (not known who).
  - Every pair of participants shares a secret bit.
@@ -350,12 +356,12 @@ Alternative approach: DC-nets ("Dining cryptographer networks").
  - Costly in terms of performance, but provides much stronger security than Tor.
  - See the Dissent OSDI 2012 paper for more details on a DCnet-based system.
 
-References:
+### References:
 
- - https://metrics.torproject.org/
- - http://dannenberg.ccc.de/tor/status-vote/current/consensus
- - https://svn.torproject.org/svn/projects/design-paper/challenges.pdf
- - https://svn.torproject.org/svn/projects/design-paper/blocking.pdf
- - http://en.wikipedia.org/wiki/Dining_cryptographers_problem
- - http://dedis.cs.yale.edu/2010/anon/papers/osdi12.pdf
+ - [Tor Project Metrics](https://metrics.torproject.org/)
+ - [1](http://dannenberg.ccc.de/tor/status-vote/current/consensus)
+ - [2](https://svn.torproject.org/svn/projects/design-paper/challenges.pdf)
+ - [3](https://svn.torproject.org/svn/projects/design-paper/blocking.pdf)
+ - [4](http://en.wikipedia.org/wiki/Dining_cryptographers_problem)
+ - [5](http://dedis.cs.yale.edu/2010/anon/papers/osdi12.pdf)
 

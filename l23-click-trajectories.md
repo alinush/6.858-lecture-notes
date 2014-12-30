@@ -1,4 +1,6 @@
-             6.858: THE ECONOMICS OF SPAM
+The economics of spam
+=====================
+**Note:** These lecture notes were slightly modified from the ones posted on the 6.858 [course website](http://css.csail.mit.edu/6.858/2014/schedule.html) from 2014.
 
 Administrivia:
    -Don't forget to fill out the course evaluation!

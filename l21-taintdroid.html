@@ -1,7 +1,10 @@
-<p>6.858: TAINT TRACKING</p>
+<h1>Taint tracking</h1>
 
-<p>What problem does the paper try to solve?
-   -Applications can exfiltrate a user's private
+<p><strong>Note:</strong> These lecture notes were slightly modified from the ones posted on the 6.858 <a href="http://css.csail.mit.edu/6.858/2014/schedule.html">course website</a> from 2014.</p>
+
+<p>What problem does the paper try to solve?</p>
+
+<p>-Applications can exfiltrate a user's private
     data and send it to some server.
    -High-level approach: keep track of which
     data is sensitive, and prevent it from

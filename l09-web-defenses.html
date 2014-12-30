@@ -1,14 +1,18 @@
 <h1>Web Security, part II</h1>
 
+<p><strong>Note:</strong> These lecture notes were slightly modified from the ones posted on the 6.858 <a href="http://css.csail.mit.edu/6.858/2014/schedule.html">course website</a> from 2014.</p>
+
 <p>Last lecture, we looked at a core security
 mechanism for the web: the same-origin policy.</p>
 
 <p>In this lecture, we'll continue to look at
 how we can build secure web applications.</p>
 
+<h2>"Shell shock"-like exploits</h2>
+
 <p>The recent "Shell Shock" bug is a good example
-of how difficult it is to design web services
-that compose multiple technologies.</p>
+of <em>how <strong>difficult</strong> it is to design web services
+that compose multiple technologies</em>.</p>
 
 <p>A web client can include extra headers
 in its HTTP requests, and determine which
@@ -62,7 +66,7 @@ scripting attacks (XSS).</p>
 a query string parameter in the HTML that
 it generates.</p>
 
-<p>Demo:</p>
+<p><strong>Demo:</strong></p>
 
 <pre><code>Step 1: Run the CGI server.
    ./cgiServer.py

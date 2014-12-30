@@ -1,6 +1,8 @@
 <h1>Tor</h1>
 
-<p>What's the goal of the paper (or Tor)?</p>
+<p><strong>Note:</strong> These lecture notes were slightly modified from the ones posted on the 6.858 <a href="http://css.csail.mit.edu/6.858/2014/schedule.html">course website</a> from 2014.</p>
+
+<h2>What's the goal of the paper (or Tor)?</h2>
 
 <ul>
 <li>Anonymity for clients, which want to connect to servers on the internet.</li>
@@ -13,7 +15,7 @@
 </ul></li>
 </ul>
 
-<p>How to achieve anonymity?</p>
+<h2>How to achieve anonymity?</h2>
 
 <ul>
 <li>Must encrypt traffic to/from the person that wants to be anonymous.
@@ -36,7 +38,7 @@
 <li>So, approach: relay traffic via intermediary that encrypts/decrypts.</li>
 </ul>
 
-<p>Why do we need more than one node?</p>
+<h2>Why do we need more than one node?</h2>
 
 <ul>
 <li>Scalability: handle more traffic than a single node.</li>
@@ -58,7 +60,7 @@
 </ul></li>
 </ul>
 
-<p>Main idea: onion routing.</p>
+<h2>Main idea: onion routing</h2>
 
 <ul>
 <li>Mesh of onion routers (ORs) in the network.</li>
@@ -77,7 +79,7 @@
 </ul></li>
 </ul>
 
-<p>At what level should we relay things?</p>
+<h2>At what level should we relay things?</h2>
 
 <ul>
 <li>Could do any level -- IP packets, TCP connections, application-level (HTTP)</li>
@@ -114,7 +116,7 @@
 </ul></li>
 </ul>
 
-<p>Tor design.</p>
+<h2>Tor design</h2>
 
 <ul>
 <li>Mesh of ORs: every OR connected via SSL/TLS to every other OR.
@@ -167,7 +169,7 @@
 </ul></li>
 </ul>
 
-<p>Terminology: circuits and streams.</p>
+<h3>Terminology: circuits and streams.</h3>
 
 <ul>
 <li>Circuit: a path through a list of ORs that a client builds up.
@@ -188,7 +190,7 @@
 </ul></li>
 </ul>
 
-<p>Tor circuits.</p>
+<h3>Tor circuits</h3>
 
 <ul>
 <li>Circuit is a sequence of ORs, along with shared (symmetric AES) keys.
@@ -236,7 +238,7 @@
 <li>Other values like "relay begin", .. used to set up streams.</li>
 </ul>
 
-<p>How does the OP send data via circuit?</p>
+<h3>How does the OP send data via circuit?</h3>
 
 <ul>
 <li>Compose relay packet as above (not encrypted yet).</li>
@@ -256,14 +258,14 @@
 </ul></li>
 </ul>
 
-<p>What does an OR do with relay packets?</p>
+<h3>What does an OR do with relay packets?</h3>
 
 <ul>
 <li>If it's coming from OP's direction, decrypt and forward away from OP</li>
 <li>If it's coming not from OP's direction, encrypt and forward towards OP</li>
 </ul>
 
-<p>How does an OR know if a relay packet is destined to it or not?</p>
+<h3>How does an OR know if a relay packet is destined to it or not?</h3>
 
 <ul>
 <li>Verify checksum: if matches, most likely meant for the current OR.</li>
@@ -279,21 +281,21 @@
 </ul></li>
 </ul>
 
-<p>How to establish a new stream?</p>
+<h3>How to establish a new stream?</h3>
 
 <ul>
 <li>OP sends a "relay begin" via circuit. - Contains target hostname, port.</li>
 <li>Who picks stream ID? - OP can choose arbitrary stream ID in its circuit.</li>
 </ul>
 
-<p>What is the "leaky pipe" topology?</p>
+<h3>What is the "leaky pipe" topology?</h3>
 
 <ul>
 <li>OP can send relay messages to any OR along its circuit (not just the last OR).</li>
 <li>Can build stream (i.e., TCP connection) via any OR, to foil traffic analysis.</li>
 </ul>
 
-<p>Initializing circuits.</p>
+<h3>Initializing circuits</h3>
 
 <ul>
 <li>OP picks the sequence of ORs to use for its circuit.
@@ -346,7 +348,7 @@
 </ul></li>
 </ul>
 
-<p>What state does each OR keep for each circuit that passes through it?</p>
+<h3>What state does each OR keep for each circuit that passes through it?</h3>
 
 <ul>
 <li>Circuit ID and neighbor OR for two directions in the circuit (to/from OP).</li>
@@ -354,7 +356,7 @@
 <li>SHA-1 state for each circuit.</li>
 </ul>
 
-<p>Can we avoid storing all of this state in the network?</p>
+<h3>Can we avoid storing all of this state in the network?</h3>
 
 <ul>
 <li>Not without a variable-length path descriptor in each cell.</li>
@@ -362,7 +364,7 @@
 <li>Intermediate nodes would need to perform public-key crypto (expensive).</li>
 </ul>
 
-<p>Why does Tor need exit policies?</p>
+<h3>Why does Tor need exit policies?</h3>
 
 <ul>
 <li>Preventing abuse (e.g., anonymously sending spam).</li>
@@ -377,7 +379,7 @@
 </ul></li>
 </ul>
 
-<p>What if Tor didn't do integrity checking?</p>
+<h3>What if Tor didn't do integrity checking?</h3>
 
 <ul>
 <li>Need integrity to prevent a tagging attack.</li>
@@ -385,7 +387,7 @@
 <li>Corrupted packets will eventually get sent out, can watch where they go.</li>
 </ul>
 
-<p>How does Tor prevent replays?</p>
+<h3>How does Tor prevent replays?</h3>
 
 <ul>
 <li>Each checksum is actually checksum of all previous cells between OP &amp; OR.</li>
@@ -393,7 +395,7 @@
 <li>Works well because underlying transport is reliable (SSL/TLS over TCP).</li>
 </ul>
 
-<p>Anonymous services.</p>
+<h3>Anonymous services</h3>
 
 <ul>
 <li>Hidden services named by public keys (pseudo-DNS name "publickey.onion").</li>
@@ -431,7 +433,7 @@
 </ul></li>
 </ul>
 
-<p>Potential pitfalls when using Tor?</p>
+<h3>Potential pitfalls when using Tor?</h3>
 
 <ul>
 <li>Application-level leaks (Javascript, HTTP headers, DNS, ..)
@@ -447,15 +449,15 @@
 <li>Malicious ORs: join network, advertise lots of bandwidth, open exit policy.</li>
 </ul>
 
-<p>Benefits / risks of running an OR?</p>
+<h3>Benefits / risks of running an OR?</h3>
 
-<p>Benefits:</p>
+<p><strong>Benefits:</strong></p>
 
 <ul>
 <li>more anonymity</li>
 </ul>
 
-<p>Risks:</p>
+<p><strong>Risks:</strong></p>
 
 <ul>
 <li>resource use</li>
@@ -463,7 +465,7 @@
 <li>offline attacks (e.g., machine seized by law enforcement)</li>
 </ul>
 
-<p>How hard is it to block Tor?</p>
+<h3>How hard is it to block Tor?</h3>
 
 <ul>
 <li>Find list of OR IPs from directory, block all traffic to them.</li>
@@ -489,7 +491,7 @@
 </ul></li>
 </ul>
 
-<p>Would you use Tor? - What applications is it good for?</p>
+<h3>Would you use Tor? What applications is it good for?</h3>
 
 <ul>
 <li>Might be too slow to use for all traffic (high latency).</li>
@@ -499,7 +501,7 @@
 <li>Allegedly, Google used Tor to check if servers special-case Google's IPs.</li>
 </ul>
 
-<p>How active is Tor?</p>
+<h3>How active is Tor?</h3>
 
 <ul>
 <li>Much more active use now than what the paper describes.
@@ -511,7 +513,7 @@
 <li>Some BitTorrent use, but not overwhelming: mostly, too slow for large files.</li>
 </ul>
 
-<p>Alternative approach: DC-nets ("Dining cryptographer networks").</p>
+<h3>Alternative approach: DC-nets ("Dining cryptographer networks").</h3>
 
 <ul>
 <li>N participants, but suppose there's only one sender (not known who).</li>
@@ -523,13 +525,13 @@
 <li>See the Dissent OSDI 2012 paper for more details on a DCnet-based system.</li>
 </ul>
 
-<p>References:</p>
+<h3>References:</h3>
 
 <ul>
-<li>https://metrics.torproject.org/</li>
-<li>http://dannenberg.ccc.de/tor/status-vote/current/consensus</li>
-<li>https://svn.torproject.org/svn/projects/design-paper/challenges.pdf</li>
-<li>https://svn.torproject.org/svn/projects/design-paper/blocking.pdf</li>
-<li>http://en.wikipedia.org/wiki/Dining<em>cryptographers</em>problem</li>
-<li>http://dedis.cs.yale.edu/2010/anon/papers/osdi12.pdf</li>
+<li><a href="https://metrics.torproject.org/">Tor Project Metrics</a></li>
+<li><a href="http://dannenberg.ccc.de/tor/status-vote/current/consensus">1</a></li>
+<li><a href="https://svn.torproject.org/svn/projects/design-paper/challenges.pdf">2</a></li>
+<li><a href="https://svn.torproject.org/svn/projects/design-paper/blocking.pdf">3</a></li>
+<li><a href="http://en.wikipedia.org/wiki/Dining_cryptographers_problem">4</a></li>
+<li><a href="http://dedis.cs.yale.edu/2010/anon/papers/osdi12.pdf">5</a></li>
 </ul>

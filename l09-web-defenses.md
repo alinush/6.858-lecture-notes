@@ -1,5 +1,6 @@
 Web Security, part II
 =====================
+**Note:** These lecture notes were slightly modified from the ones posted on the 6.858 [course website](http://css.csail.mit.edu/6.858/2014/schedule.html) from 2014.
 
 Last lecture, we looked at a core security
 mechanism for the web: the same-origin policy.
@@ -7,9 +8,12 @@ mechanism for the web: the same-origin policy.
 In this lecture, we'll continue to look at
 how we can build secure web applications.
 
+"Shell shock"-like exploits
+---------------------------
+
 The recent "Shell Shock" bug is a good example
-of how difficult it is to design web services
-that compose multiple technologies.
+of _how **difficult** it is to design web services
+that compose multiple technologies_.
 
 A web client can include extra headers
 in its HTTP requests, and determine which
@@ -61,7 +65,7 @@ Example: Suppose that a CGI script embeds
 a query string parameter in the HTML that
 it generates.
 
-Demo:
+**Demo:**
        
     Step 1: Run the CGI server.
        ./cgiServer.py

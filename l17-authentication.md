@@ -1,7 +1,10 @@
-               USER AUTHENTICATION
+User authentication
+===================
+**Note:** These lecture notes were slightly modified from the ones posted on the 6.858 [course website](http://css.csail.mit.edu/6.858/2014/schedule.html) from 2014.
 
 Core challenge: How can human users prove their
 identity to a program?
+
   -Is there any solution that totally dominates
    passwords?
   -At first glance, passwords seem wretched.

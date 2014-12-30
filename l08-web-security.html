@@ -1,6 +1,10 @@
 <h1>Web security</h1>
 
-<p>What is the web? In the old days, it was a
+<p><strong>Note:</strong> These lecture notes were slightly modified from the ones posted on the 6.858 <a href="http://css.csail.mit.edu/6.858/2014/schedule.html">course website</a> from 2014.</p>
+
+<h2>What is the web?</h2>
+
+<p>In the old days, it was a
 simple client/server architecture (client
 was your web browser, server was a machine
 on the network that could deliver static
@@ -79,6 +83,8 @@ with their friends.</li>
 <a href="http://quirksmode.org">QuirksMode</a></li>
 </ul></li>
 </ul>
+
+<h2>Client-side web applications</h2>
 
 <p>In this lecture, we're going to <strong>focus on the
 client-side of a web application</strong>. In particular,
@@ -165,8 +171,10 @@ regular http://?
 <p>To answer these questions, browsers use a security
 model called the <strong>same-origin policy</strong>.</p>
 
+<h2>Same-origin policy</h2>
+
 <ul>
-<li>Vague goal: Two different websites should not
+<li><em>Vague goal:</em> Two different websites should not
 be able to tamper with each other's content.</li>
 <li>Easy to state, but tricky to implement.
 <ul>
