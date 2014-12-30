@@ -1,0 +1,535 @@
+<h1>Tor</h1>
+
+<p>What's the goal of the paper (or Tor)?</p>
+
+<ul>
+<li>Anonymity for clients, which want to connect to servers on the internet.</li>
+<li>Anonymity for servers, which want to service requests from users.</li>
+<li>What is anonymity?
+<ul>
+<li>Adversary cannot tell which users are communicating with which servers.</li>
+<li>Adversary (most likely) knows that users, servers are communicating via Tor.</li>
+<li>That is, Tor not designed to prevent adversary from finding Tor users.</li>
+</ul></li>
+</ul>
+
+<p>How to achieve anonymity?</p>
+
+<ul>
+<li>Must encrypt traffic to/from the person that wants to be anonymous.
+<ul>
+<li>Otherwise, adversary looks at packets and figures out what's going on.</li>
+</ul></li>
+<li>But encryption is not enough: could still trace where encrypted packets went.</li>
+<li>Mix one user's traffic with traffic from other users (or "cover traffic").
+<ul>
+<li>Anonymity for one user requires having many other users like the first one.</li>
+<li>If all other users just run BitTorrent, then Wikipedia user is easy to spot.</li>
+<li>If all other users use Firefox, then a Chrome user would be easy to spot.</li>
+<li>...</li>
+</ul></li>
+<li>Adversary would not be able to tell which user initiated what connections.</li>
+<li>The mixing component must change the packets (e.g., encrypt/decrypt).
+<ul>
+<li>Otherwise, can look for where the exact same packet shows up later.</li>
+</ul></li>
+<li>So, approach: relay traffic via intermediary that encrypts/decrypts.</li>
+</ul>
+
+<p>Why do we need more than one node?</p>
+
+<ul>
+<li>Scalability: handle more traffic than a single node.</li>
+<li>Compromise: attacker learns info about direct clients of compromised node.
+<ul>
+<li>With many indep. nodes, this affects only a small fraction of traffic.</li>
+<li>With onion routing, attacker must compromise all nodes in the chain.</li>
+</ul></li>
+<li>Traffic analysis: attacker can correlate incoming / outgoing traffic.
+<ul>
+<li>Can look at timing between packets, or volume of packets.</li>
+<li>Chaining makes timing/volume analysis attack more difficult to mount.</li>
+</ul></li>
+<li>Can attacker still succeed?
+<ul>
+<li>Yes, if they observe or compromise enough nodes.</li>
+<li>For instance, may suffice to observe first and last node.</li>
+<li>Attacker can also inject timing info (by delaying packets) to analyze.</li>
+</ul></li>
+</ul>
+
+<p>Main idea: onion routing.</p>
+
+<ul>
+<li>Mesh of onion routers (ORs) in the network.</li>
+<li>Assumption: client knows public keys of all ORs.</li>
+<li>Client picks some path through this network.</li>
+<li>Naive strawman of onion routing (not quite Tor):
+<ul>
+<li>Client encrypts message in public key of each OR in path in turn.</li>
+<li>Send message to first OR in path, which decrypts &amp; relays, and so on.</li>
+<li>"Exit node" (last OR in path) sends the data out into the real network.</li>
+</ul></li>
+<li>Why is this a good design?
+<ul>
+<li>Each OR knows previous &amp; next hop, not ultimate source or destination.</li>
+<li>With two ORs, compromising a single OR does not break anonymity.</li>
+</ul></li>
+</ul>
+
+<p>At what level should we relay things?</p>
+
+<ul>
+<li>Could do any level -- IP packets, TCP connections, application-level (HTTP)</li>
+<li>What's the advantage / disadvantage?
+<ul>
+<li>Lower-level (IP): more general, fewer app. changes, works with more apps.</li>
+<li>Higher-level (TCP, HTTP): more efficient (overhead for a single TCP frame, rather than overhead for multiple IP frames that store a single TCP frame), more anonymous.</li>
+</ul></li>
+<li>What does Tor do?
+<ul>
+<li>TCP-level relaying, using SOCKS (intercepts libc calls).</li>
+<li>Examples of efficiency: no need for TCP flow-control, Tor does re-xmit</li>
+<li>Examples of lost generality: UDP doesn't work, can't traceroute, ..</li>
+<li>How does DNS work with Tor, if no UDP support?
+<ul>
+<li>SOCKS can capture the destination's hostname, not just IP address</li>
+<li>Exit node performs DNS lookup, establishes TCP connection</li>
+</ul></li>
+</ul></li>
+<li>Examples of anonymity that's lost at lower layers?
+<ul>
+<li>If we did IP, would leak lots of TCP info (seq#, timestamp)</li>
+<li>If we did TCP, would leak all kinds of HTTP headers and cookies</li>
+<li>If we did HTTP, can violate anonymity via Javascript, Flash, ..
+<ul>
+<li>Lots of identifiable features in Javascript environment.</li>
+<li>Browser version, history sniffing, local network addrs/servers..</li>
+</ul></li>
+<li>"Protocol normalization": fix all degrees of freedom in higher protocol.
+<ul>
+<li>Hard to do in practice; app-specific proxies are useful (e.g., Privoxy).</li>
+<li>Demo of browser "identification": https://panopticlick.eff.org/</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p>Tor design.</p>
+
+<ul>
+<li>Mesh of ORs: every OR connected via SSL/TLS to every other OR.
+<ul>
+<li>Don't need CA-signed SSL/TLS certs.</li>
+<li>Tor has its own public key checking plan using directory servers.</li>
+<li>ORs mostly run by volunteers: e.g., MIT runs several.</li>
+</ul></li>
+<li>End-users run an onion proxy (OP) that implements SOCKS.</li>
+<li>OR has two public keys: identity key and onion key.</li>
+<li>Identity key registered with directory, signs OR state.</li>
+<li>Onion key used by OPs to connect to ORs, build circuits.
+<ul>
+<li>Client downloads list of ORs from directory.</li>
+<li>Chooses a chain of ORs to form circuit, contacts each OR in turn.</li>
+</ul></li>
+<li>Clients building circuits is expensive. - Why do it this way?
+<ul>
+<li>Any single server might be compromised, can't trust it.</li>
+<li>Unavoidable to trust the client machine, however.</li>
+</ul></li>
+<li>Why do we need an onion key in addition to an identity key?
+<ul>
+<li>Might be able to protect identity key from long-term compromises.</li>
+<li>Each OR uses identity key to sign its current onion key.</li>
+</ul></li>
+<li>Why does Tor need a directory?
+<ul>
+<li>Someone needs to approve ORs.
+<ul>
+<li>Otherwise attacker can create many ORs, monitor traffic.</li>
+</ul></li>
+<li>Does having a directory compromise anonymity?
+<ul>
+<li>No, don't need to query it online.</li>
+</ul></li>
+<li>What if a directory is compromised?
+<ul>
+<li>Clients require majority of directories to agree.</li>
+</ul></li>
+<li>What if many directories are compromised?
+<ul>
+<li>Attacker can inject many ORs, monitor traffic.</li>
+</ul></li>
+<li>What if directories are out-of-sync?
+<ul>
+<li>Attacker may narrow down user's identity based on dir info.</li>
+<li>User that saw one set of directory messages will use certain ORs.</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p>Terminology: circuits and streams.</p>
+
+<ul>
+<li>Circuit: a path through a list of ORs that a client builds up.
+<ul>
+<li>Circuits exist for some period of time (perhaps a few minutes).</li>
+<li>New circuits opened periodically to foil attacks.</li>
+</ul></li>
+<li>Stream is effectively a TCP connection.
+<ul>
+<li>Many streams run over the same circuit (each with separate stream ID).</li>
+<li>Streams are an important optimization: no need to rebuild circuit.</li>
+</ul></li>
+<li>Why does Tor need circuits?</li>
+<li>What goes wrong if we have long-lived circuits?
+<ul>
+<li>Adversary may correlate multiple streams in a single circuit.</li>
+<li>Tie a single user's connections to different sites, break anonymity.</li>
+</ul></li>
+</ul>
+
+<p>Tor circuits.</p>
+
+<ul>
+<li>Circuit is a sequence of ORs, along with shared (symmetric AES) keys.
+<ul>
+<li>ORs <code>c_1, c_2, .., c_n</code></li>
+<li>Keys <code>k_1, k_2, .., k_n</code></li>
+</ul></li>
+<li>Cell format:
+<ul>
+<li><code>+---------+---------------+-----------+</code></li>
+<li><code>| Circuit | Control/Relay |  - DATA   |</code></li>
+<li><code>+---------+---------------+-----------+</code></li>
+<li><code>2 bytes   +   1 byte   +  509 bytes</code></li>
+</ul></li>
+<li>Think of the "Circuit" and "Control/Relay" fields as link-layer headers.
+<ul>
+<li>Circuit IDs are per-link (between pairs of ORs).</li>
+<li>Used to multiplex many circuits on the same TLS connection between ORs.</li>
+<li>Control messages are "link-local": sent only to an immediate neighbor.</li>
+<li>Relay messages are "end-to-end": relayed along the circuit.</li>
+</ul></li>
+<li>Why is all traffic in fixed-size cells?
+<ul>
+<li>Makes traffic analysis harder.</li>
+</ul></li>
+<li>What are control commands?
+<ul>
+<li>padding: keepalive or link padding.</li>
+<li>create/created/destroy: creating and destroying circuits.</li>
+</ul></li>
+<li>What are relay commands (what's in the DATA)?
+<ul>
+<li>If the relay packet is destined to the current node:</li>
+<li><code>+----------+--------+-----+-----+-----------+</code></li>
+<li><code>| StreamID | Digest | Len | CMD | RelayData |</code></li>
+<li><code>+----------+--------+-----+-----+-----------+</code></li>
+<li><code>2 bytes   + 6 bytes+  2  +  1  + 498 bytes</code></li>
+<li>If the relay packet is destined for another node:</li>
+<li><code>+-------------------------------------------+</code></li>
+<li><code>| Encrypted, opaque data  +   +   +   +   + |</code></li>
+<li><code>+-------------------------------------------+</code></li>
+<li><code>+    +    +    +    509 bytes</code></li>
+</ul></li>
+<li>CMD field for TCP data is "relay data".</li>
+<li>Other values like "relay begin", .. used to set up streams.</li>
+</ul>
+
+<p>How does the OP send data via circuit?</p>
+
+<ul>
+<li>Compose relay packet as above (not encrypted yet).</li>
+<li>Compute a valid checksum (digest).
+<ul>
+<li>Digest is based on the target OR that should decrypt packet.</li>
+<li>Hash is taken over some function of key + all msgs exchanged with that OR.
+<ul>
+<li>Prevents replay attacks and active attacks</li>
+</ul></li>
+<li>First 2 bytes of digest are zeroes, other 4 bytes come from the hash.</li>
+</ul></li>
+<li>Encrypt with <code>AES(k_n)</code>, then <code>AES(k_{n-1}), .., AES(k_1).</code></li>
+<li>Send encrypted cell to the first OR (<code>c_1</code>).
+<ul>
+<li>(Effectively reverse process for OP receiving data via circuit.)</li>
+</ul></li>
+</ul>
+
+<p>What does an OR do with relay packets?</p>
+
+<ul>
+<li>If it's coming from OP's direction, decrypt and forward away from OP</li>
+<li>If it's coming not from OP's direction, encrypt and forward towards OP</li>
+</ul>
+
+<p>How does an OR know if a relay packet is destined to it or not?</p>
+
+<ul>
+<li>Verify checksum: if matches, most likely meant for the current OR.</li>
+<li>Optimization: first 2 bytes of digest should be zero.
+<ul>
+<li>If the first two bytes are non-zero, can skip hashing: not our packet.</li>
+</ul></li>
+<li>If checksum does not match, not meant for this OR, keep relaying.</li>
+<li>Nice properties:
+<ul>
+<li>Packet size independent of path length.</li>
+<li>Only the last OR knows the destination.</li>
+</ul></li>
+</ul>
+
+<p>How to establish a new stream?</p>
+
+<ul>
+<li>OP sends a "relay begin" via circuit. - Contains target hostname, port.</li>
+<li>Who picks stream ID? - OP can choose arbitrary stream ID in its circuit.</li>
+</ul>
+
+<p>What is the "leaky pipe" topology?</p>
+
+<ul>
+<li>OP can send relay messages to any OR along its circuit (not just the last OR).</li>
+<li>Can build stream (i.e., TCP connection) via any OR, to foil traffic analysis.</li>
+</ul>
+
+<p>Initializing circuits.</p>
+
+<ul>
+<li>OP picks the sequence of ORs to use for its circuit.
+<ul>
+<li>Why have the OP do this? - Resistance to other ORs "diverting" the circuit.</li>
+</ul></li>
+<li>Connect to first OR, issue "create" operation to create circuit.
+<ul>
+<li>Create includes a DH key-exchange message.</li>
+<li>Created response includes DH key-exchange reply.</li>
+</ul></li>
+<li>Key exchange protocol:
+<ul>
+<li>[ OP, OR agree on prime p, generator g ]</li>
+<li>OP chooses random x.</li>
+<li>OP sends <code>E_{PK_OR}(g^x)</code>.</li>
+<li>OR chooses random y.</li>
+<li>OR computes <code>K=g^xy</code>.</li>
+<li>OR replies with <code>g^y, H(K || "handshake")</code>.</li>
+<li>OP computes <code>K=g^xy</code>.</li>
+</ul></li>
+<li>How do we authenticate the parties here?
+<ul>
+<li>First DH message encrypted with OR's onion key.</li>
+<li>Hash of key in DH response proves to client that correct OR decrypted msg.</li>
+<li>Server does not authenticate client -- anonymity!</li>
+</ul></li>
+<li>Forward secrecy: what? how?</li>
+<li>Key freshness: why? how?</li>
+<li>Who chooses the circuit ID?
+<ul>
+<li>The client end of the TLS connection (not the overall circuit's OP).</li>
+<li>Each circuit has a different circuit ID for each link it traverses.</li>
+</ul></li>
+<li>What's in the DATA for Control packets?
+<ul>
+<li>Control operations (create, destroy) or responses (e.g. created).</li>
+<li>Arguments (e.g., DH key-exchange data).</li>
+</ul></li>
+<li>For each subsequent OR, OP sends a "relay extend" message via circuit.
+<ul>
+<li>Include the same DH key-exchange message in the "relay extend" cell.</li>
+<li>At the end of circuit, "relay extend" transforms into "create".</li>
+<li>Client ends up with shared (symmetric AES) key for each OR in circuit.</li>
+</ul></li>
+<li>Why does Tor have separate control cells vs relay cells?
+<ul>
+<li>Ensures cells are always fixed size.</li>
+<li>Last OR in the old circuit needs to know the new OR &amp; circuit IDs.</li>
+</ul></li>
+</ul>
+
+<p>What state does each OR keep for each circuit that passes through it?</p>
+
+<ul>
+<li>Circuit ID and neighbor OR for two directions in the circuit (to/from OP).</li>
+<li>Shared key with OP for this circuit and this OR.</li>
+<li>SHA-1 state for each circuit.</li>
+</ul>
+
+<p>Can we avoid storing all of this state in the network?</p>
+
+<ul>
+<li>Not without a variable-length path descriptor in each cell.</li>
+<li>Exit node would likewise need a path descriptor to know how to send back.</li>
+<li>Intermediate nodes would need to perform public-key crypto (expensive).</li>
+</ul>
+
+<p>Why does Tor need exit policies?</p>
+
+<ul>
+<li>Preventing abuse (e.g., anonymously sending spam).</li>
+<li>Exit policies similar to firewall rules (e.g., cannot connect to port 25).
+<ul>
+<li>Each exit node checks the exit policy when new connection opened.</li>
+</ul></li>
+<li>Why publish exit policy in directory, along with other node info?
+<ul>
+<li>Not used for enforcement.</li>
+<li>OP needs to know what exit nodes are likely to work.</li>
+</ul></li>
+</ul>
+
+<p>What if Tor didn't do integrity checking?</p>
+
+<ul>
+<li>Need integrity to prevent a tagging attack.</li>
+<li>Attacker compromises internal node, corrupts data packets.</li>
+<li>Corrupted packets will eventually get sent out, can watch where they go.</li>
+</ul>
+
+<p>How does Tor prevent replays?</p>
+
+<ul>
+<li>Each checksum is actually checksum of all previous cells between OP &amp; OR.</li>
+<li>Checksum for same data sent again would be different.</li>
+<li>Works well because underlying transport is reliable (SSL/TLS over TCP).</li>
+</ul>
+
+<p>Anonymous services.</p>
+
+<ul>
+<li>Hidden services named by public keys (pseudo-DNS name "publickey.onion").</li>
+<li>Why the split between introduction and rendezvous point?
+<ul>
+<li>Avoid placing traffic load on introduction points.</li>
+<li>Avoid introduction point transferring known-illegal data.</li>
+</ul></li>
+<li>Split prevents both problems.
+<ul>
+<li>Bob (service) has an introduction point (IP).</li>
+<li>Alice chooses a rendezvous point (RP), tells Bob's IP about RP.</li>
+<li>Introduction point does not relay data.</li>
+<li>Rendezvous point doesn't know what data it's relaying</li>
+</ul></li>
+<li>Why does Bob connect back to Alice?
+<ul>
+<li>Admission control, spread load over many rendezvous points.</li>
+</ul></li>
+<li>What's the rendezvous cookie? - Lets Bob prove to Alice's RP that it's Bob.</li>
+<li>What's the authorization cookie?
+<ul>
+<li>Something that might compel Bob to reply, when he otherwise wouldn't.</li>
+<li>Maybe a secret word most people don't know.</li>
+<li>Limits DoS attacks on Bob's server (can just send many cookies).</li>
+<li>Stored in hostname: cookie.pubkey.onion.</li>
+</ul></li>
+<li>End state: two circuits to the RP, with a stream connected between them.
+<ul>
+<li>RP takes relay cells from one circuit's stream and</li>
+<li>sends them on a stream in the other circuit.</li>
+<li>Bridged data is encrypted using key shared between Alice &amp; Bob (DH).</li>
+<li>Each can control their own level of anonymity.</li>
+<li>Neither knows the full path of the other circuit.</li>
+</ul></li>
+</ul>
+
+<p>Potential pitfalls when using Tor?</p>
+
+<ul>
+<li>Application-level leaks (Javascript, HTTP headers, DNS, ..)
+<ul>
+<li>Use an app-level proxy (e.g., Privoxy strips many HTTP headers).</li>
+</ul></li>
+<li>Fingerprinting based on Tor client behavior (how often new circuit opened).</li>
+<li>Timing/volume analysis (partial defense is to run your own Tor OR).</li>
+<li>Fingerprinting web sites: number of requests &amp; file sizes of popular sites.
+<ul>
+<li>Quantization from fixed-size cells helps a bit.</li>
+</ul></li>
+<li>Malicious ORs: join network, advertise lots of bandwidth, open exit policy.</li>
+</ul>
+
+<p>Benefits / risks of running an OR?</p>
+
+<p>Benefits:</p>
+
+<ul>
+<li>more anonymity</li>
+</ul>
+
+<p>Risks:</p>
+
+<ul>
+<li>resource use</li>
+<li>online attacks (DoS, break-ins, ..)</li>
+<li>offline attacks (e.g., machine seized by law enforcement)</li>
+</ul>
+
+<p>How hard is it to block Tor?</p>
+
+<ul>
+<li>Find list of OR IPs from directory, block all traffic to them.</li>
+<li>How to defend against such an attack?</li>
+<li>Reveal different ORs to different clients?
+<ul>
+<li>Allows for client fingerprinting based on ORs used.</li>
+</ul></li>
+<li>Maintain some unlisted ORs?
+<ul>
+<li>Want to use unlisted ORs only as the first hop, to avoid fingerprinting.</li>
+<li>Tor has notion of "bridge" node, which is an unlisted OR.</li>
+</ul></li>
+<li>How to find these unlisted "bridge" ORs?
+<ul>
+<li>Want legitimate user to find them, but not let adversary enumerate them.</li>
+<li>Approach taken by Tor: special bridge directory.</li>
+<li>Reveal 3 bridges to each IP (via HTTP) or email addr (via email).</li>
+<li>Reveal new bridges to same client address only after 24 hours.</li>
+<li>Can rate-limit by IP, find attempts to enumerate bridge database, etc.</li>
+<li>For email, easier for adversary to create fake identities (email addrs).</li>
+<li>Tor trusts 3 mail providers to rate-limit signup (gmail, yahoo, mit).</li>
+</ul></li>
+</ul>
+
+<p>Would you use Tor? - What applications is it good for?</p>
+
+<ul>
+<li>Might be too slow to use for all traffic (high latency).</li>
+<li>But unfortunately that means only sensitive traffic would go via Tor.</li>
+<li>Plausible attacks exist, so not great against very powerful adversaries.</li>
+<li>Maybe a good way to avoid denial-of-service attacks (i.e., offload to Tor).</li>
+<li>Allegedly, Google used Tor to check if servers special-case Google's IPs.</li>
+</ul>
+
+<p>How active is Tor?</p>
+
+<ul>
+<li>Much more active use now than what the paper describes.
+<ul>
+<li>~3000 public ORs, ~1000 exit nodes, ~1000 bridge nodes, ~2GB/s OR bandwidth.</li>
+<li>8-9 (?) directory servers, ~1600 directory mirrors.</li>
+</ul></li>
+<li>Hard problems: distributing entry point IPs, approving ORs, ..</li>
+<li>Some BitTorrent use, but not overwhelming: mostly, too slow for large files.</li>
+</ul>
+
+<p>Alternative approach: DC-nets ("Dining cryptographer networks").</p>
+
+<ul>
+<li>N participants, but suppose there's only one sender (not known who).</li>
+<li>Every pair of participants shares a secret bit.</li>
+<li>To transmit a "0" bit, send XOR of all secrets. - Otherwise, send the opposite.</li>
+<li>All transmissions are public: to recover bit, XOR everyone's transmissions.</li>
+<li>Can build up to send multiple bits, use a collision-detection protocol, etc.</li>
+<li>Costly in terms of performance, but provides much stronger security than Tor.</li>
+<li>See the Dissent OSDI 2012 paper for more details on a DCnet-based system.</li>
+</ul>
+
+<p>References:</p>
+
+<ul>
+<li>https://metrics.torproject.org/</li>
+<li>http://dannenberg.ccc.de/tor/status-vote/current/consensus</li>
+<li>https://svn.torproject.org/svn/projects/design-paper/challenges.pdf</li>
+<li>https://svn.torproject.org/svn/projects/design-paper/blocking.pdf</li>
+<li>http://en.wikipedia.org/wiki/Dining<em>cryptographers</em>problem</li>
+<li>http://dedis.cs.yale.edu/2010/anon/papers/osdi12.pdf</li>
+</ul>
