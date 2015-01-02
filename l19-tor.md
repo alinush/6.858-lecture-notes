@@ -359,9 +359,9 @@ Tor design
 ### References:
 
  - [Tor Project Metrics](https://metrics.torproject.org/)
- - [1](http://dannenberg.ccc.de/tor/status-vote/current/consensus)
- - [2](https://svn.torproject.org/svn/projects/design-paper/challenges.pdf)
- - [3](https://svn.torproject.org/svn/projects/design-paper/blocking.pdf)
- - [4](http://en.wikipedia.org/wiki/Dining_cryptographers_problem)
- - [5](http://dedis.cs.yale.edu/2010/anon/papers/osdi12.pdf)
+ - [Tor Consensus Health](https://consensus-health.torproject.org/)
+ - [Challenges in deploying low-latency anonymity](https://svn.torproject.org/svn/projects/design-paper/challenges.pdf)
+ - [Design of a blocking-resistant anonymity system](https://svn.torproject.org/svn/projects/design-paper/blocking.pdf)
+ - [Dining cryptographers problem](http://en.wikipedia.org/wiki/Dining_cryptographers_problem)
+ - [Dissent in Numbers: Making strong anonymity scale](http://dedis.cs.yale.edu/2010/anon/papers/osdi12.pdf)
 
