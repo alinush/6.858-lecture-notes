@@ -96,78 +96,79 @@ How to implement RSA?
 ### Optimization 1: Chinese Remainder Theorem (CRT).
 
  * Recall what the CRT says:
-   * if x==a1 (mod p) and x==a2 (mod q), where p and q are relatively prime,
-   * then there's a unique solution x==a (mod pq).
-    [ and, there's an efficient algorithm for computing a ]
- * Suppose we want to compute m = c^d (mod pq).
- * Can compute m1 = c^d (mod p), and m2 = c^d (mod q).
- * Then use CRT to compute m = c^d (mod n) from m1, m2; it's unique and fast.
- * Computing m1 (or m2) is ~4x faster than computing m directly (~quadratic).
- * Computing m from m1 and m2 using CRT is ~negligible in comparison.
+   * if `x==a1 (mod p)` and `x==a2 (mod q)`, where `p` and `q` are relatively prime,
+   * then there's a unique solution `x==a (mod pq)`.
+     - and, there's an efficient algorithm for computing `a`
+ * Suppose we want to compute `m = c^d (mod pq)`.
+ * Can compute `m1 = c^d (mod p)`, and `m2 = c^d (mod q)`.
+ * Then use CRT to compute `m = c^d (mod n)` from `m1`, `m2`; it's unique and fast.
+ * Computing `m1` (or `m2`) is ~4x faster than computing `m` directly (~quadratic).
+ * Computing `m` from `m1` and `m2` using CRT is ~negligible in comparison.
  * So, roughly a 2x speedup.
 
 ### Optimization 2: Repeated squaring and Sliding windows.
 
- * Naive approach to computing c^d: multiply c by itself, d times.
+ * Naive approach to computing `c^d`: multiply `c` by itself, `d` times.
  * Better approach, called repeated squaring:
-   * c^(2x)   = (c^x)^2
-   * c^(2x+1) = (c^x)^2 * c
-   * To compute c^d, first compute c^(floor(d/2)), then use above for c^d.
-   * Recursively apply until the computation hits c^0 = 1.
-   * Number of squarings:       |d|
-   * Number of multiplications: number of 1 bits in d
- * Better yet (sometimes), called sliding window:
-   * c^(2x)    = (c^x)^2
-   * c^(32x+1) = (c^x)^32 * c
-   * c^(32x+3) = (c^x)^32 * c^3
-      ...
-   * c^(32x+z) = (c^x)^32 * c^z, generally [where `z<=31`]
-   * Can pre-compute a table of all necessary c^z powers, store in memory.
+   * `c^(2x)   = (c^x)^2`
+   * `c^(2x+1) = (c^x)^2 * c`
+   * To compute `c^d`, first compute `c^(floor(d/2))`, then use above for `c^d`.
+   * Recursively apply until the computation hits `c^0 = 1`.
+   * Number of squarings:       `|d|` (the number of bits needed to represent `d`)
+   * Number of multiplications: number of 1 bits in `d`
+ * Better yet (sometimes), called _sliding window_:
+   * `c^(2x)    = (c^x)^2`
+   * `c^(32x+1) = (c^x)^32 * c`
+   * `c^(32x+3) = (c^x)^32 * c^3`
+   *  ...
+   * `c^(32x+z) = (c^x)^32 * c^z`, generally (where `z<=31`)
+   * Can pre-compute a table of all necessary `c^z` powers, store in memory.
    * The choice of power-of-2 constant (e.g., 32) depends on usage.
      * Costs: extra memory, extra time to pre-compute powers ahead of time.
-   * Note: only pre-compute odd powers of c (use first rule for even).
+   * Note: only pre-compute odd powers of `c` (use first rule for even).
    * OpenSSL uses 32 (table with 16 pre-computed entries).
 
 ### Optimization 3: Montgomery representation.
 
- * Reducing mod p each time (after square or multiply) is expensive.
+ * Reducing `mod p` each time (after square or multiply) is expensive.
    * Typical implementation: do long division, find remainder.
    * Hard to avoid reduction: otherwise, value grows exponentially.
  * Idea (by Peter Montgomery): do computations in another representation.
-   * Shift the base (e.g., c) into different representation upfront.
+   * Shift the base (e.g., `c`) into different representation upfront.
    * Perform modular operations in this representation (will be cheaper).
    * Shift numbers back into original representation when done.
    * Ideally, savings from reductions outweigh cost of shifting.
  * Montgomery representation: multiply everything by some factor R.
-   * a mod q        <-> aR mod q
-   * b mod q        <-> bR mod q
-   * c = a*b mod q  <-> cR mod q = (aR * bR)/R mod q
-   * Each mul (or sqr) in Montgomery-space requires division by R.
- * Why is modular multiplication cheaper in montgomery rep?
-   * Choose R so division by R is easy: R = 2^|q| (2^512 for 1024-bit keys).
-   * Because we divide by R, we will often not need to do mod q.
-        |aR|          = |q|
-        |bR|          = |q|
-        |aR * bR|     = 2|q|
-        |aR * bR / R| = |q|
-   * How do we divide by R cheaply? * Only works if lower bits are zero.
-   * Observation: since we care about value mod q, multiples of q don't matter.
-   * Trick: add multiples of q to the number being divided by R, make low bits 0.
-     * For example, suppose R=2^4 (10000), q=7 (111), divide x=26 (11010) by R.
-       * x+2q    = (binary) * 101000
-       * x+2q+8q = (binary) 1100000
-     * Now, can easily divide by R: result is binary 110 (or 6).
+   * `a mod q        <-> aR mod q`
+   * `b mod q        <-> bR mod q`
+   * `c = a*b mod q  <-> cR mod q = (aR * bR)/R mod q`
+   * Each mul (or sqr) in Montgomery-space requires division by `R`.
+ * Why is modular multiplication cheaper in Montgomery repr.?
+   * Choose `R` so division by `R` is easy: `R = 2^|q|` (`2^512` for 1024-bit keys).
+   * Because we divide by `R`, we will often not need to do `mod q`.
+     + `|aR|          = |q|`
+     + `|bR|          = |q|`
+     + `|aR * bR|     = 2|q|`
+     + `|aR * bR / R| = |q|`
+   * How do we divide by `R` cheaply? 
+     + Only works if lower bits are zero.
+   * _Observation:_ since we care about value `mod q`, multiples of `q` don't matter.
+   * _Trick:_ add multiples of `q` to the number being divided by `R`, make low bits 0.
+     * For example, suppose `R=2^4 (10000)`, `q=7 (111)`, divide `x=26 (11010)` by R.
+       * `x+2q    = (binary) * 101000`
+       * `x+2q+8q = (binary) 1100000`
+     * Now, can easily divide by `R`: result is binary 110 (or 6).
      * Generally, always possible:
-       * Low bit of q is 1 (q is prime), so can "shoot down" any bits.
-       * To "shoot down" bit k, add 2^k * q
-       * To shoot down low-order bits l, add q*(l*(-q^-1) mod R)
-       * Then, dividing by R means simply discarding low zero bits.
- * One remaining problem: result will be < R, but might be > q.
-   * If the result happens to be greater than q, need to subtract q.
+       * Low bit of `q` is 1 (`q` is prime), so can "shoot down" any bits.
+       * To "shoot down" bit `k`, add `2^k * q`
+       * To shoot down low-order bits `l`, add `q*(l*(-q^-1) mod R)`
+       * Then, dividing by `R` means simply discarding low zero bits.
+ * _One remaining problem:_ result will be `< R`, but might be `> q`.
+   * If the result happens to be greater than `q`, need to subtract `q`.
    * This is called the "extra reduction".
-   * When computing x^d mod q, Pr[extra reduction] = (x mod q) / 2R.
-     * Here, x is assumed to be already in Montgomery form.
-     * Intuition: as we multiply bigger numbers, will overflow more often.
+   * When computing `x^d mod q`, `Pr[extra reduction] = (x mod q) / 2R`.
+     * Here, `x` is assumed to be already in Montgomery form.
+     * _Intuition:_ as we multiply bigger numbers, will overflow more often.
 
 ### Optimization 4: Efficient multiplication.
 
@@ -175,27 +176,27 @@ How to implement RSA?
  * Representation: break up into 32-bit values (or whatever hardware supports).
  * Naive approach: pair-wise multiplication of all 32-bit components.
    * Same as if you were doing digit-wise multiplication of numbers on paper.
-   * Requires O(nm) time if two numbers have n and m components respectively.
-   * O(n^2) if the two numbers are close.
- * Karatsuba multiplication: assumes both numbers have same number of components.
-   * O(n^log_3(2)) = O(n^1.585) time.
-   * Split both numbers (x and y) into two components (x1, x0 and y1, y0).
-     * x = x1 * B + x0
-     * y = y1 * B + y0
-     * E.g., B=2^32 when splitting 64-bit numbers into 32-bit components.
-   * Naive: x*y = x1y1 * B^2 + x0y1 * B + x1y0 * B + x0y0
-     * Four multiplies: O(n^2).
-   * Faster: x*y = x1y1 * (B^2+B) - (x1-x0)(y1-y0) * B + x0y0 * (B+1)
-                = x1y1 * B^2 + ( -(x1-x0)(y1-y0) + x1y1 + x0y0 ) * B + x0y0
+   * Requires `O(nm)` time if two numbers have `n` and `m` components respectively.
+   * `O(n^2)` if the two numbers are close.
+ * **Karatsuba multiplication:** assumes both numbers have same number of components.
+   * `O(n^log_3(2)) = O(n^1.585)`time.
+   * Split both numbers (`x` and `y`) into two components (`x1`, `x0` and `y1`, `y0`).
+     * `x = x1 * B + x0`
+     * `y = y1 * B + y0`
+     * E.g., `B=2^32` when splitting 64-bit numbers into 32-bit components.
+   * Naive: `x*y = x1y1 * B^2 + x0y1 * B + x1y0 * B + x0y0`
+     * Four multiplies: `O(n^2)`
+   * Faster: `x*y = x1y1 * (B^2+B) - (x1-x0)(y1-y0) * B + x0y0 * (B+1)`
+     * ... `= x1y1 * B^2 + ( -(x1-x0)(y1-y0) + x1y1 + x0y0 ) * B + x0y0`
      * Just three multiplies, and a few more additions.
    * Recursively apply this algorithm to keep splitting into more halves.
      * Sometimes called "recursive multiplication".
    * Meaningfully faster (no hidden big constants)
-     * For 1024-bit keys, "n" here is 16 (512/32).
-     * n^2     = 256
-     * n^1.585 = 81
+     * For 1024-bit keys, "`n`" here is 16 (512/32).
+     * `n^2     = 256`
+     * `n^1.585 = 81`
  * Multiplication algorithm needs to decide when to use Karatsuba vs. Naive.
-   * Two cases matter: two large numbers, and one large + one small number.
+   * Two cases matter: _two large numbers_, and _one large + one small number_.
    * OpenSSL: if equal number of components, use Karatsuba, otherwise Naive.
    * In some intermediate cases, Karatsuba may win too, but OpenSSL ignores it,
      * according to this paper.
@@ -210,7 +211,7 @@ How does SSL use RSA?
    * In reality, server also verifies message padding.
    * However, can still measure time until server responds in some way.
 
-Figure of decryption pipeline on the server:
+Figure of **decryption pipeline** on the server:
 
                       * CRT             * To Montgomery             * Modular exp
             --> * c_0 = c mod q  --> * c'_0 = c_0*R mod q  --> * m'_0 = (c'_0)^d mod q
@@ -227,7 +228,7 @@ Figure of decryption pipeline on the server:
 
  * Then, compute `m_0 = m'_0/R mod q`.
  * Then, combine `m_0` and `m_1` using CRT to get `m`.
- * Then verify padding in m.
+ * Then verify padding in `m`.
  * Finally, use payload in some way (SSL, etc).
 
 Setup for the attack described in Brumley's paper
@@ -239,38 +240,41 @@ Setup for the attack described in Brumley's paper
  * Adversary sends specially-constructed ciphertext in msg to server.
    * Server decrypts ciphertext, finds garbage padding, returns an error.
    * Client measures response time to get error message.
-   * Uses the response time to guess bits of q.
+   * Uses the response time to guess bits of `q`.
  * Overall response time is on the order of 5 msec.
    * Time difference between requests can be around 10 usec.
- * What causes time variations? * Karatsuba vs normal; extra reductions.
- * Once guessed enough bits of q, can factor n=p*q, compute d from e.
- * About 1M queries seem enough to obtain 512-bit p and q for 1024-bit key.
-   * Only need to guess the top 256 bits of p and q, then use another algorithm.
+ * What causes time variations? 
+   * Karatsuba vs. Naive
+   * extra reductions
+ * Once guessed enough bits of `q`, can factor `n=p*q`, compute `d` from `e`.
+ * About 1M queries seem enough to obtain 512-bit `p` and `q` for 1024-bit key.
+   * Only need to guess the top 256 bits of `p` and `q`, then use another algorithm.
 
 Attack from Brumley's paper
 ---------------------------
 
- * Let q = q_0 q_1 .. q_N, where N = |q| (say, 512 bits for 1024-bit keys).
- * Assume we know some number j of high-order bits of q (q_0 through q_j).
- * Construct two approximations of q, guessing q_{j+1} is either 0 or 1:
-   * g    = q_0 q_1 .. q_j 0 0 0 .. 0
-   * g_hi = q_0 q_1 .. q_j 1 0 0 .. 0
- * Get the server to perform modular exponentiation (g^d) for both guesses.
-   * We know g is necessarily less than q.
-   * If g and g_hi are both less than q, time taken shouldn't change much.
-   * If g_hi is greater than q, time taken might change noticeably.
-     * g_hi mod q is small.
+ * See the _Remote timing attacks are practical_ paper cited in the _References_ section at the end for more details.
+ * Let `q = q_0 q_1 .. q_N`, where `N = |q|` (say, 512 bits for 1024-bit keys).
+ * Assume we know some number `j` of high-order bits of `q` (`q_0` through `q_j`).
+ * Construct two approximations of q, guessing `q_{j+1}` is either 0 or 1:
+   * `g    = q_0 q_1 .. q_j 0 0 0 .. 0`
+   * `g_hi = q_0 q_1 .. q_j 1 0 0 .. 0`
+ * Get the server to perform modular exponentiation (`g^d`) for both guesses.
+   * We know `g` is necessarily less than `q`.
+   * If `g` and `g_hi` are both less than `q`, time taken shouldn't change much.
+   * If `g_hi` is greater than `q`, time taken might change noticeably.
+     * `g_hi mod q` is small.
      * Less time: fewer extra reductions in Montgomery.
      * More time: switch from Karatsuba to normal multiplication.
    * Knowing the time taken can tell us if 0 or 1 was the right guess.
  * How to get the server to perform modular exponentiation on our guess?
    * Send our guess as if it were the encryption of randomness to server.
    * One snag: server will convert our message to Montgomery form.
-   * Since Montgomery's R is known, send (g/R mod n) as message to server.
+   * Since Montgomery's `R` is known, send (`g/R mod n`) as message to server.
  * How do we know if the time difference should be positive or negative?
    * Paper seems to suggest it doesn't matter: just look for large diff.
    * Figure 3a shows the measured time differences for each bit's guess.
-   * Karatsuba vs normal multiplication happens at 32-bit boundaries.
+   * Karatsuba vs. normal multiplication happens at 32-bit boundaries.
    * First 32 bits: extra reductions dominate.
    * Next bits: Karatsuba vs normal multiplication dominates.
    * At some point, extra reductions start dominating again.
@@ -278,21 +282,21 @@ Attack from Brumley's paper
    * Figure 3, key 3.
    * Larger neighborhood changes the balance a bit, reveals a non-zero gap.
  * How does the paper get accurate measurements?
-   * Client machine uses processor's timestamp counter (rdtsc on x86).
+   * Client machine uses processor's timestamp counter (`rdtsc` on x86).
    * Measure several times, take the median value.
      * Not clear why median; min seems like it would be the true compute time.
-   * One snag: relatively few multiplications by g, due to sliding windows.
-   * Solution: get more multiplications by values close to g (+ same for g_hi).
-   * Specifically, probe a "neighborhood" of g (g, g+1, .., g+400).
- * Why probe a 400-value neighborhood of g instead of measuring g 400 times?
+   * One snag: relatively few multiplications by `g`, due to sliding windows.
+   * Solution: get more multiplications by values close to `g` (+ same for `g_hi`).
+   * Specifically, probe a "neighborhood" of `g` (`g, g+1, .., g+400`).
+ * Why probe a 400-value neighborhood of `g` instead of measuring `g` 400 times?
    * Consider the kinds of noise we are trying to deal with.
-   * 1. Noise unrelated to computation (e.g. interrupts, network latency).
+   * (1) Noise unrelated to computation (e.g. interrupts, network latency).
       * This might go away when we measure the same thing many times.
       * See Figure 2a in the paper.
-   * 2. "Noise" related to computation.
-      * E.g., multiplying by g^3 and g_hi^3 in sliding window takes diff time.
+   * (2) "Noise" related to computation.
+      * E.g., multiplying by `g^3` and `g_hi^3` in sliding window takes diff time.
       * Repeated measurements will return the same value.
-      * Will not help determine whether mul by g or g_hi has more reductions.
+      * Will not help determine whether mul by `g` or `g_hi` has more reductions.
       * See Figure 2b in the paper.
    * Neighborhood values average out 2nd kind of noise.
    * Since neighborhood values are nearby, still has ~same # reductions.
@@ -301,11 +305,11 @@ How to avoid these attacks?
 ---------------------------
 
  * Timing attack on decryption time: RSA blinding.
-   * Choose random r.
-   * Multiply ciphertext by r^e mod n: c' = c*r^e mod n.
-   * Due to multiplicative property of RSA, c' is an encryption of m*r.
-   * Decrypt ciphertext c' to get message m'.
-   * Divide plaintext by r: m = m'/r.
+   * Choose random `r`.
+   * Multiply ciphertext by `r^e mod n`: `c' = c*r^e mod n`.
+   * Due to multiplicative property of RSA, `c'` is an encryption of `m*r`.
+   * Decrypt ciphertext `c'` to get message `m'`.
+   * Divide plaintext by `r`: `m = m'/r`.
    * About a 10% CPU overhead for OpenSSL, according to Brumley's paper.
  * Make all code paths predictable in terms of execution time.
    * Hard, compilers will strive to remove unnecessary operations.
@@ -325,7 +329,7 @@ How to avoid these attacks?
  * Adversary has to be close by, in terms of network.
    * Not that big of a problem for adversary.
    * Can average over more queries, co-locate nearby (Amazon EC2),
-     * run on a nearby bot or browser, etc.
+     * Run on a nearby bot or browser, etc.
  * Adversary may need to know the version, optimization flags, etc of OpenSSL.
    * Is it a good idea to rely on such a defense?
    * How big of an impediment is this?
@@ -334,26 +338,26 @@ How to avoid these attacks?
 Other types of timing attacks
 -----------------------------
 
- * Page-fault timing for password guessing [Tenex system]
+ * **Page-fault timing for password guessing** [Tenex system]
    * Suppose the kernel provides a system call to check user's password.
      * Checks the password one byte at a time, returns error when finds mismatch.
    * Adversary aligns password, so that first byte is at the end of a page,
-     * rest of password is on next page.
+     * Rest of password is on next page.
    * Somehow arrange for the second page to be swapped out to disk.
-     * Or just unmap the next page entirely (using equivalent of mmap).
+     * Or just unmap the next page entirely (using equivalent of `mmap`).
    * Measure time to return an error when guessing password.
      * If it took a long time, kernel had to read in the second page from disk.
-      [ Or, if unmapped, if crashed, then kernel tried to read second page. ]
+         - Or, if unmapped, if crashed, then kernel tried to read second page. ]
      * Means first character was right!
-   * Can guess an N-character password in 256*N tries, rather than 256^N.
- * Cache analysis attacks: processor's cache shared by all processes.
+   * Can guess an `N`-character password in `256*N` tries, rather than `256^N`.
+ * **Cache analysis attacks:** processor's cache shared by all processes.
    * E.g.: accessing one of the sliding-window multiples brings it in cache.
    * Necessarily evicts something else in the cache.
    * Malicious process could fill cache with large array, watch what's evicted.
-   * Guess parts of exponent (d) based on offsets being evicted.
+   * Guess parts of exponent (`d`) based on offsets being evicted.
  * Cache attacks are potentially problematic with "mobile code".
    * NaCl modules, Javascript, Flash, etc running on your desktop or phone.
- * Network traffic timing / analysis attacks.
+ * **Network traffic timing / analysis attacks**.
    * Even when data is encrypted, its ciphertext size remains ~same as plaintext.
    * Recent papers show can infer a lot about SSL/VPN traffic by sizes, timing.
    * E.g., Fidelity lets customers manage stocks through an SSL web site.
@@ -366,8 +370,9 @@ Other types of timing attacks
 References
 ----------
 
-  [Cache missing for fun and profit](http://css.csail.mit.edu/6.858/2014/readings/ht-cache.pdf)
-  [Efficient Cache Attacks on AES, and Countermeasures](http://www.tau.ac.il/~tromer/papers/cache-joc-20090619.pdf)
-  [Get Your Hands Off My Laptop: Physical Side-Channel Key-Extraction Attacks on PCs](http://www.tau.ac.il/~tromer/papers/handsoff-20140731.pdf)
-  [Cross-VM Side Channels and Their Use to Extract Private Keys](http://www.cs.unc.edu/~reiter/papers/2012/CCS.pdf)
-  [Ed25519: high-speed high-security signatures](http://ed25519.cr.yp.to/)
+ * [Remote timing attacks are practical](http://css.csail.mit.edu/6.858/2014/readings/brumley-timing.pdf)
+ * [Cache missing for fun and profit](http://css.csail.mit.edu/6.858/2014/readings/ht-cache.pdf)
+ * [Efficient Cache Attacks on AES, and Countermeasures](http://www.tau.ac.il/~tromer/papers/cache-joc-20090619.pdf)
+ * [Get Your Hands Off My Laptop: Physical Side-Channel Key-Extraction Attacks on PCs](http://www.tau.ac.il/~tromer/papers/handsoff-20140731.pdf)
+ * [Cross-VM Side Channels and Their Use to Extract Private Keys](http://www.cs.unc.edu/~reiter/papers/2012/CCS.pdf)
+ * [Ed25519: high-speed high-security signatures](http://ed25519.cr.yp.to/)
