@@ -20,11 +20,11 @@ Lecture notes from 6.858, taught by [Prof. Nickolai Zeldovich](http://people.csa
  * Lecture **15**: **Medical software** _guest lecture_ by Prof. Kevin Fu, U. Michigan
  * Lecture **16**: [Timing attacks](l16-timing-attacks.html): side-channel attacks, RSA encryption, RSA implementation, modular exponentiation, Chinese remainder theorem (CRT), repeated squaring, Montgomery representation, Karatsuba multiplication, RSA blinding, other timing attacks
  * Lecture **17**: [User authentication](l17-authentication.html): what you have, what you know, what you are, passwords, challenge-response, usability, deployability, security, biometrics, multi-factor authentication (MFA), MasterCard's CAP reader
+ * Lecture **18**: [Private browsing](l18-priv-browsing.html): private browsing mode, local and web attackers, VM-level privacy, OS-level privacy,  OS-level privacy, what browsers implement, browser extensions 
  * Lecture **19**: **Tor** _guest lecture_ by Nick Mathewson, Tor Project
    + 6.858 notes from 2012 on [Anonymous communication](l19-tor.html): onion routing, Tor design, Tor circuits, Tor streams, Tor hidden services, blocking Tor, dining cryptographers networks (DC-nets)
 
 <!--
- * Lecture **18**: [Private browsing](l18-priv-browsing.html): private browsing modes
  * Lecture **20**: [Mobile phone security](l20-android.html): Android
  * Lecture **21**: [Information flow tracking](l21-taintdroid.html): TaintDroid
  * Lecture **22**: _Guest lecture_ on _MIT's IS&T_ by Mark Silis and David LaPorte

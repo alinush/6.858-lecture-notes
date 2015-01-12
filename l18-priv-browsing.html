@@ -2,504 +2,646 @@
 
 <p><strong>Note:</strong> These lecture notes were slightly modified from the ones posted on the 6.858 <a href="http://css.csail.mit.edu/6.858/2014/schedule.html">course website</a> from 2014.</p>
 
-<p>What is the goal of privacy?
-   -Vague ideal: (activity of) a given user is
-    indistinguishable from (activity of)
-    many other users.
-   -Today we'll discuss privacy in the context
-    of web browsers.
-        *There's no formal definition of what
-         private browsing means, in part
-         because web applications are so
-         complicated and so much incriminating
-         state can be generated.
-        *Browsers update their implementation
-         of private browsing according to
-         user demand and what other browser
-         vendors do.
-        *As users rely on private browsing
-         mode, they expect more from it . . .
-         and more implementation deficiencies
-         emerge!</p>
+<h2>Private browsing: goal, definitions, threat models</h2>
 
-<p>What do the browsers mean by "private browsing"?
-   -Paper formalizes this as two separate
-    threat models + attacks:
-        1) A local attacker who possesses your
-           machine post-browsing session, and
-           wants to discover which sites you've
-           visited.
-        2) A web attacker who has compromised
-           a web server that you contact, and
-           wants to link you across private
-           and/or normal sessions.
-   -If the two attackers can collude, it's easier
-    for them to identify user.
-        *Ex: A local attacker asks the server
-         to check for the local IP address in
-         the server's access logs.
-        *So, there's practical value to security
-         against these two attacks in isolation.</p>
+<p>What is the goal of privacy?</p>
 
-<p>Threat 1: Local attacker.
-   -Assumption: Attacker gets control of the user's
-    machine post-session, and wants to learn what
-    sites the user visited in private browsing mode.
-   -Security goal: Attacker can't learn those sites!
-   -Non-goals
-         <em>Don't care about achieving privacy
-          for *future</em> private browsing sessions.
-                -Attacker could modify software on
-                 the machine (e.g., installing a
-                 keystroke logger) and track future
-                 browsing.
-                -This is why we also assume that the
-                 attacker can't access the machine
-                 <em>before</em> private browsing starts.
-          *Hide the fact that private browsing was
-           used.
-                -Often called "plausible deniability".
-                -The paper says that this is difficult
-                 to achieve, but doesn't explain why.
-                 Later in the lecture, we'll discuss
-                 some potential reasons.</p>
+<ul>
+<li>Vague ideal: (activity of) a given user is
+indistinguishable from (activity of)
+many other users.</li>
+<li>Today we'll discuss privacy in the context
+of web browsers.
+<ul>
+<li>There's no formal definition of what
+private browsing means, in part
+because web applications are so
+complicated and so much incriminating
+state can be generated.</li>
+<li>Browsers update their implementation
+of private browsing according to
+user demand and what other browser
+vendors do.</li>
+<li>As users rely on private browsing
+mode, they expect more from it . . .
+and more implementation deficiencies
+emerge!</li>
+</ul></li>
+</ul>
+
+<p>What do the browsers mean by "private browsing"?</p>
+
+<ul>
+<li>Paper formalizes this as two separate
+threat models + attacks:
+<ol>
+<li>A local attacker who possesses your
+machine post-browsing session, and
+wants to discover which sites you've
+visited.</li>
+<li>A web attacker who has compromised
+a web server that you contact, and
+wants to link you across private
+and/or normal sessions.</li>
+</ol></li>
+<li>If the two attackers can collude, it's easier
+for them to identify user.
+<ul>
+<li>Ex: A local attacker asks the server
+to check for the local IP address in
+the server's access logs.</li>
+<li>So, there's practical value to security
+against these two attacks in isolation.</li>
+</ul></li>
+</ul>
+
+<h3>Threat 1: Local attacker</h3>
+
+<ul>
+<li><em>Assumption:</em> Attacker gets control of the user's
+machine post-session, and wants to learn what
+sites the user visited in private browsing mode.</li>
+<li><em>Security goal:</em> Attacker can't learn those sites!</li>
+<li>Non-goals
+<ul>
+<li>Don't care about achieving privacy
+for <em>future</em> private browsing sessions.
+<ul>
+<li>Attacker could modify software on
+the machine (e.g., installing a
+keystroke logger) and track future
+browsing.</li>
+<li>This is why we also assume that the
+attacker can't access the machine
+<em>before</em> private browsing starts.</li>
+</ul></li>
+<li>Hide the fact that private browsing was
+used.
+<ul>
+<li>Often called "plausible deniability".</li>
+<li>The paper says that this is difficult
+to achieve, but doesn't explain why.
+Later in the lecture, we'll discuss
+some potential reasons.</li>
+</ul></li>
+</ul></li>
+</ul>
 
 <p>What kinds of persistent client-side state
-can a private session leak? [By persistent,
-we mean "stored on the local disk."]
-   1) JavaScript-accessible state: Cookies,
-      DOM storage
-   2) Browser cache
-   3) History of visited addresses
-   4) Configuration state: New client certificates,
-      updates to saved password database, bookmarks
-   5) Downloaded files
-   6) New plugins/browser extensions</p>
+can a private session leak? (By persistent,
+we mean "stored on the local disk.")</p>
 
-<p>-Private browsing implementations all
-    try to prevent persistent leaks to
-    1, 2, and 3. However, 4, 5, and 6
-    often persist after the private session
-    ends.
-   -Network activity can leave persistent
-    evidence---DNS resolution records!
-        *To fix this, private browsing mode
-         would need to flush the DNS cache
-         upon session termination. However,
-         this is tricky, because flushing
-         the cache typically requires admin
-         rights on your machine (do you want
-         the browser having admin rights?)
-         and deletes all DNS state, not the
-         state generated by a particular
-         user.
-   -During private browsing, objects in RAM
-    can also get paged out to disk!</p>
+<ol>
+<li>JavaScript-accessible state: Cookies,
+DOM storage</li>
+<li>Browser cache</li>
+<li>History of visited addresses</li>
+<li>Configuration state: New client certificates,
+updates to saved password database, bookmarks</li>
+<li>Downloaded files</li>
+<li>New plugins/browser extensions</li>
+</ol>
 
-<pre><code>    Demo
-       Open Firefox in Private Browsing Mode
-       Visit http://pdos.csail.mit.edu/
-       sudo gcore $(pgrep firefox)
-       strings core.* | grep -i pdos
-         //-e l: Look for string using the
-         //      character encoding 16-bit
-         //      little-endian.
-         //-a:   Scan all of the file.
-         //-t:   Print the offset within
-         //      the file.
+<p>...and: </p>
+
+<ul>
+<li>Private browsing implementations all
+try to prevent persistent leaks to
+1, 2, and 3. However, 4, 5, and 6
+often persist after the private session
+ends.</li>
+<li>Network activity can leave persistent
+evidence -- DNS resolution records!
+<ul>
+<li>To fix this, private browsing mode
+would need to flush the DNS cache
+upon session termination. However,
+this is tricky, because flushing
+the cache typically requires admin
+rights on your machine (do you want
+the browser having admin rights?)
+and deletes all DNS state, not the
+state generated by a particular
+user.</li>
+</ul></li>
+<li>During private browsing, objects in RAM
+can also get paged out to disk!</li>
+</ul>
+
+<p><em>Demo:</em></p>
+
+<pre><code>    Open Firefox in Private Browsing Mode
+    Visit http://pdos.csail.mit.edu/
+    sudo gcore $(pgrep firefox)
+    strings core.* | grep -i pdos
+
+      // -e l: Look for string using the
+      //       character encoding 16-bit
+      //       little-endian.
+      // -a:   Scan all of the file.
+      // -t:   Print the offset within
+      //       the file.
 </code></pre>
 
 <p>Data lifetime is a broader problem than just
-private browsing!
-   -Ex: cryptographic keys or passwords might
-    be problematic if disclosed.
-    [Ref: http://css.csail.mit.edu/6.858/2010/readings/chow-shredding.pdf]</p>
+private browsing!</p>
 
-<pre><code>     Demo
-        cat memclear.c
-        cat secret.txt
-        make memclear
-        ./memclear &amp;
-        sudo gcore $(pgrep memclear)
-        strings core.* | grep secret
+<ul>
+<li>Example: cryptographic keys or passwords might
+be problematic if disclosed. <a href="http://css.csail.mit.edu/6.858/2010/readings/chow-shredding.pdf">Ref</a></li>
+</ul>
+
+<p><em>Demo:</em></p>
+
+<pre><code>     cat memclear.c
+     cat secret.txt
+     make memclear
+     ./memclear &amp;
+     sudo gcore $(pgrep memclear)
+     strings core.* | grep secret
 </code></pre>
 
-<p>Where does data persist?
-   -Process memory: heap, stack.
-        *Terminal scrollback
-        *I/O buffers, X event queues,
-         DNS cache, proxy servers, ...
-        *Language runtime makes copies (e.g.,
-         immutable strings in Python)
-   -Files, file backups, SQLite databases
-   -Swap file, hibernate file
-   -Kernel memory:
-        *IO buffers: keyboard, mouse inputs
-        *Freed memory pages
-        *Network packet buffers
-        *Pipe buffers contain data sent
-         between processes
-        *Random number generator inputs
-         (including keystrokes again).</p>
+<p>Where does data persist?</p>
+
+<ul>
+<li>Process memory: heap, stack.
+<ul>
+<li>Terminal scrollback</li>
+<li>I/O buffers, X event queues, DNS cache, proxy servers, ...</li>
+<li>Language runtime makes copies (e.g., immutable strings in Python)</li>
+</ul></li>
+<li>Files, file backups, SQLite databases</li>
+<li>Swap file, hibernate file</li>
+<li>Kernel memory:
+<ul>
+<li>IO buffers: keyboard, mouse inputs</li>
+<li>Freed memory pages</li>
+<li>Network packet buffers</li>
+<li>Pipe buffers contain data sent between processes</li>
+<li>Random number generator inputs (including keystrokes again).</li>
+</ul></li>
+</ul>
 
 <p>How could an attacker get a copy of leftover
-data?
-   -Files themselves may contain multiple
-    versions (e.g., Word used to support
-    this feature).
-   -Programs may leak information if they don't
-    scrub memory on deallocation or program
-    shutdown:
-        *Ex: In older Linux kernels, up to 4 KB of
-         kernel memory could be leaked to disk
-         when a new directory was created.
-        *Ex: If the kernel/VMM doesn't wipe memory
-         pages, then information from process X
-         can leak into process Y that uses X's
-         old memory pages.
-   -Core dumps
-   -Direct access to the machine
-   -Flash SSDs implement logging---they don't
-    erase old data right away!
-   -Stolen disks, or just disposing of old
-    disks [Ref: http://news.cnet.com/2100-1040-980824.html]</p>
+data?</p>
 
-<p>How can we deal with the data lifetime problems?
-   -Zero out unused memory [with some performance
-    degradation].
-   -Encrypt data in places where zeroing out is
-    difficult (e.g., on an SSD).
-        *Securely deleting the key means data
-         cannot be decrypted anymore!
-        *Ex: OpenBSD swap uses encryption, with
-         a new encryption key generated at boot
-         time.
-        *CPU cost of encryption is modest
-         compared to disk I/O.</p>
+<ul>
+<li>Files themselves may contain multiple
+versions (e.g., Word used to support
+this feature).</li>
+<li>Programs may leak information if they don't
+scrub memory on deallocation or program
+shutdown:
+<ul>
+<li>Ex: In older Linux kernels, up to 4 KB of
+kernel memory could be leaked to disk
+when a new directory was created.</li>
+<li>Ex: If the kernel/VMM doesn't wipe memory
+pages, then information from process X
+can leak into process Y that uses X's
+old memory pages.</li>
+</ul></li>
+<li>Core dumps</li>
+<li>Direct access to the machine</li>
+<li>Flash SSDs implement logging -- they don't
+erase old data right away!</li>
+<li>Stolen disks, or just disposing of old
+disks [Ref: http://news.cnet.com/2100-1040-980824.html]</li>
+</ul>
 
-<p>Threat 2: Web attacker
-   -Assumptions:
-        *Attacker controls the web sites that
-         the user visits.
-        *Attacker does not control the user's
-         machine.
-        *Attacker wants to detect when the
-         user visits the site.
-   -Security goals:
-        *Attacker cannot identify the user.
-        *Attacker cannot determine if the
-         user is employing private browsing
-         mode.</p>
+<p>How can we deal with the data lifetime problems?</p>
+
+<ul>
+<li>Zero out unused memory [with some performance
+degradation].</li>
+<li>Encrypt data in places where zeroing out is
+difficult (e.g., on an SSD).
+<ul>
+<li>Securely deleting the key means data
+cannot be decrypted anymore!</li>
+<li>Ex: OpenBSD swap uses encryption, with
+a new encryption key generated at boot
+time.</li>
+<li>CPU cost of encryption is modest
+compared to disk I/O.</li>
+</ul></li>
+</ul>
+
+<h3>Threat 2: Web attacker</h3>
+
+<ul>
+<li><em>Assumptions:</em>
+<ul>
+<li>Attacker controls the web sites that
+the user visits.</li>
+<li>Attacker does not control the user's
+machine.</li>
+<li>Attacker wants to detect when the
+user visits the site.</li>
+</ul></li>
+<li><em>Security goals:</em>
+<ul>
+<li>Attacker cannot identify the user.</li>
+<li>Attacker cannot determine if the
+user is employing private browsing
+mode.</li>
+</ul></li>
+</ul>
 
 <p>Defending against a web attacker is very
-difficult!
-   -What does it mean to identify a user?
-        *Link visits by the same user from
-         different private browsing sessions.
-        *Link visits by user from private browsing
-         and public browsing sessions.
-   -Easy way to identify user: IP address.
-        *With reasonable probability, requests
-         from the same IP address are the same
-         user.
-        *Next lecture, we'll discuss Tor. Tor
-         protects the privacy of the source of
-         a TCP connection (i.e., user's IP).
-         However, Tor doesn't solve other
-         challenges with implementing private
-         browsing.
-   -Even if the user employs Tor, a web server
-    can still identify her by analyzing the
-    unique characteristics of her browser runtime!</p>
+difficult!</p>
 
-<pre><code>     Browser fingerprinting demo.
-        -Open Chrome, go to http://panopticlick.eff.org/
-        -Open the same web site in private
-         browsing mode.
+<ul>
+<li>What does it mean to identify a user?
+<ul>
+<li>Link visits by the same user from
+different private browsing sessions.</li>
+<li>Link visits by user from private browsing
+and public browsing sessions.</li>
+</ul></li>
+<li>Easy way to identify user: IP address.
+<ul>
+<li>With reasonable probability, requests
+from the same IP address are the same
+user.</li>
+<li>Next lecture, we'll discuss Tor. Tor
+protects the privacy of the source of
+a TCP connection (i.e., user's IP).
+However, Tor doesn't solve other
+challenges with implementing private
+browsing.</li>
+</ul></li>
+<li>Even if the user employs Tor, a web server
+can still identify her by analyzing the
+unique characteristics of her browser runtime!</li>
+</ul>
 
-     Good way to think of privacy: what is the
-     anonymity set of a user? I.e., what is
-     the largest set of users among which some
-     user is indistinguishable?
-        -Panopticlick shows that this set is
-         small for most users, because users
-         tend to have unique local settings
-         for fonts, plugins, etc.
+<p><em>Browser fingerprinting demo:</em></p>
+
+<pre><code> -  Open Chrome, go to http://panopticlick.eff.org/
+ -  Open the same web site in private
+          browsing mode.
 </code></pre>
 
-<p>-How can a web attacker determine if you're
-    using private browsing mode?
-         *Paper describes a history sniffing attack
-          based on link colors.
-            -Attacker page loads a URL in an iframe,
-             then creates a link to that URL and
-             sees whether the link is purple
-             (private sessions don't store history).
-            -This attack doesn't work any more,
-             since browsers no longer expose link
-             color to JavaScript! [See discussion
-             of history sniffing attacks from a
-             few lectures ago.]
-         *However, there may be other ways for the
-          attacker to tell that you're using private
-          mode.
-            -Ex: Public-mode cookies cannot be seen
-             by private-mode pages. So, if you visit 
-             a page in public mode, and then in
-             private mode, the page can detect that
-             an expected cookie is missing.</p>
+<ul>
+<li>Good way to think of privacy: what is the
+anonymity set of a user? I.e., what is
+the largest set of users among which some
+user is indistinguishable?
+<ul>
+<li>Panopticlick shows that this set is
+small for most users, because users
+tend to have unique local settings
+for fonts, plugins, etc.</li>
+</ul></li>
+<li>How can a web attacker determine if you're
+using private browsing mode?
+<ul>
+<li>Paper describes a history sniffing attack
+based on link colors.
+<ul>
+<li>Attacker page loads a URL in an iframe,
+then creates a link to that URL and
+sees whether the link is purple
+(private sessions don't store history).</li>
+<li>This attack doesn't work any more,
+since browsers no longer expose link
+color to JavaScript! [See discussion
+of history sniffing attacks from a
+few lectures ago.]</li>
+</ul></li>
+<li>However, there may be other ways for the
+attacker to tell that you're using private
+mode.
+<ul>
+<li>Ex: Public-mode cookies cannot be seen
+by private-mode pages. So, if you visit 
+a page in public mode, and then in
+private mode, the page can detect that
+an expected cookie is missing.</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h2>Approaches</h2>
 
 <p>How can we provide stronger guarantees for private
-browsing? [Let's ignore IP address privacy for now,
-or assume that users employ Tor.]
-   -Approach 1: VM-level privacy
-         Plan:
-            -Run each private browsing session in a
-             separate VM.
-            -Ensure that the VM is deleted after
-             private browsing is done.
-            -Somehow make sure that no VM state ends
-             up on disk [disable paging? secure
-             deallocation?].</p>
+browsing? (Let's ignore IP address privacy for now,
+or assume that users employ Tor.)</p>
 
-<pre><code>     Advantages: 
-        -Strong guarantees against both a local
-         attacker and a web attacker.
-        -No changes required to application,
-         just need secure deletion of VM.
-
-     Drawbacks:
-        -Spinning up a separate VM for private
-         browsing is heavyweight.
-        -Poor usability: It's harder for users to
-         save files from private browsing, use
-         bookmarks, etc.
-
-         Inherent trade-off between usability and
-         privacy!
-</code></pre>
-
-<p>-Approach 2: OS-level privacy
-         Plan: Implement similar guarantees at the OS
-         kernel level.
-            -A process can run in a "privacy domain",
-             which will be deleted afterwards.</p>
-
-<pre><code>     Advantages over VM: Lighter-weight.
-
-     Drawbacks w.r.t VM: Harder to get right,
-     since the OS kernel manages a lot of state.
-</code></pre>
+<ul>
+<li>Approach 1: <strong>VM-level privacy</strong>
+<ul>
+<li><em>Plan:</em>
+<ul>
+<li>Run each private browsing session in a
+separate VM.</li>
+<li>Ensure that the VM is deleted after
+private browsing is done.</li>
+<li>Somehow make sure that no VM state ends
+up on disk [disable paging? secure
+deallocation?].</li>
+</ul></li>
+<li><strong>Advantages:</strong>
+<ul>
+<li>Strong guarantees against both a local
+attacker and a web attacker.</li>
+<li>No changes required to application,
+just need secure deletion of VM.</li>
+</ul></li>
+<li><strong>Drawbacks:</strong>
+<ul>
+<li>Spinning up a separate VM for private
+browsing is heavyweight.</li>
+<li>Poor usability: It's harder for users to
+save files from private browsing, use
+bookmarks, etc.</li>
+</ul></li>
+<li>Inherent trade-off between usability and
+privacy!</li>
+</ul></li>
+<li>Approach 2: <strong>OS-level privacy</strong>
+<ul>
+<li><em>Plan:</em> Implement similar guarantees at the OS
+kernel level.
+<ul>
+<li>A process can run in a "privacy domain",
+ which will be deleted afterwards.</li>
+</ul></li>
+<li><strong>Advantages over VM</strong>: Lighter-weight.</li>
+<li><strong>Drawbacks w.r.t VM:</strong> Harder to get right,
+since the OS kernel manages a lot of state.</li>
+</ul></li>
+</ul>
 
 <p>Are there ways to de-anonymize a user who employs
-these approaches?
-   -Maybe the VM itself is unique! So, we need
-    to ensure that all users have similar VMs.
-         *This limits the extent to which users
-          can customize VMs.
-   -Maybe the VMM or host computer introduces some
-    uniqueness.
-         *Ex: TCP fingerprinting: The TCP protocol
-          allows some parameters to be set by the
-          implementation (e.g., the initial packet
-          size, the initial TTL).
-         *Tools like nmap send carefully crafted
-          packets to a remote server; can guess
-          the remote OS with high likelihood!
-   -The user is still shared! So, perhaps the
-    attacker can:
-         *Detect the user's keystroke timing.
-         *Detect the user's writing style. This
-          is called stylography.
-          [Ref: http://33bits.org/2012/02/20/is-writing-style-sufficient-to-deanonymize-material-posted-online/]</p>
+these approaches?</p>
+
+<ul>
+<li>Maybe the VM itself is unique! So, we need
+to ensure that all users have similar VMs.
+<ul>
+<li>This limits the extent to which users
+can customize VMs.</li>
+</ul></li>
+<li>Maybe the VMM or host computer introduces some
+uniqueness.
+<ul>
+<li><em>Ex:</em> TCP fingerprinting: The TCP protocol
+allows some parameters to be set by the
+implementation (e.g., the initial packet
+size, the initial TTL).</li>
+<li>Tools like nmap send carefully crafted
+packets to a remote server; can guess
+the remote OS with high likelihood!</li>
+</ul></li>
+<li>The user is still shared! So, perhaps the
+attacker can:
+<ul>
+<li>Detect the user's keystroke timing.</li>
+<li>Detect the user's writing style. This
+is called stylography. <a href="http://33bits.org/2012/02/20/is-writing-style-sufficient-to-deanonymize-material-posted-online/">Ref</a></li>
+</ul></li>
+</ul>
 
 <p>Why do browsers implement their own private
-browsing support?
-   -Main reason is deployability: Users don't
-    have to run their browser in a custom VM
-    or OS.
-         *Similar motivation for Native Client.
-   -Another reason is usability: Some types of
-    state generated in private mode should be
-    able to persist after the session is finished.
-    [ex: downloaded files].
-         *This is a dangerous plan! Browsers are
-          complicated pieces of software, so it's
-          difficult to find clean cuts in the
-          architecture which allow some types
-          of state (but not others) to persist.</p>
+browsing support?</p>
+
+<ul>
+<li>Main reason is deployability: Users don't
+have to run their browser in a custom VM
+or OS.
+<ul>
+<li>Similar motivation for Native Client.</li>
+</ul></li>
+<li>Another reason is usability: Some types of
+state generated in private mode should be
+able to persist after the session is finished.
+(Ex: downloaded files).
+<ul>
+<li>This is a dangerous plan! Browsers are
+complicated pieces of software, so it's
+difficult to find clean cuts in the
+architecture which allow some types
+of state (but not others) to persist.</li>
+</ul></li>
+</ul>
 
 <p>How do we categorize those types of state? The
 paper says that we should think about who
-initiated the state change (Section 2.1).
-   1) Initiated by web site, no user interaction:
-      cookies, history, cache.
-          *Stays within session, is deleted on
-           session teardown.
-   2) Initiated by web site, requires user
-      interaction: client certificates, saved
-      passwords.
-          *Unclear what's the best strategy;
-           browsers tend to store this state
-           persistently, probably because the
-           user has to explicitly authorize
-           the action.
-   3) Initiated by user: bookmarks, file
-      downloads.
-          *Same as above: browsers tend to
-           store this state persistently
-           because the user authorizes the
-           action . . .
-          *. . . but note that storing this
-           state may reveal the fact that
-           the user employed private browsing
-           mode!
-               -Ex: In Firefox and Chrome,
-                bookmarks live in a SQLite
-                database. Bookmarks generated
-                in private browsing mode will
-                have empty values for metadata
-                like "last<em>visit</em>count".
-                [Ref: http://homepages.cs.ncl.ac.uk/feng.hao/files/DPM13.pdf]
-   4) Unrelated to a session: Browser updates,
-      certificate revocation list updates.
-          *Treat as a single global state
-           shared between public mode and
-           private mode.</p>
+initiated the state change (Section 2.1).</p>
 
-<p>What do browsers actually implement?
-   -Each browser is, of course, different.
-   -Moreover, some state "bleeds over" in one
-    direction but not another! There isn't a
-    strict partitioning between private mode
-    and public mode state.</p>
+<ol>
+<li><em>Initiated by web site, no user interaction:</em>
+cookies, history, cache.
+<ul>
+<li>Stays within session, is deleted on
+session teardown.</li>
+</ul></li>
+<li><em>Initiated by web site, requires user
+interaction:</em> client certificates, saved
+passwords.
+<ul>
+<li>Unclear what's the best strategy;
+browsers tend to store this state
+persistently, probably because the
+user has to explicitly authorize
+the action.</li>
+</ul></li>
+<li><em>Initiated by user:</em> bookmarks, file
+downloads.
+<ul>
+<li>Same as above: browsers tend to
+store this state persistently
+because the user authorizes the
+action</li>
+<li>...but note that storing this
+state may reveal the fact that
+the user employed private browsing
+mode!
+<ul>
+<li><em>Ex:</em> In Firefox and Chrome,
+bookmarks live in a SQLite
+database. Bookmarks generated
+in private browsing mode will
+have empty values for metadata
+like <code>last_visit_count</code><a href="http://homepages.cs.ncl.ac.uk/feng.hao/files/DPM13.pdf">Ref</a></li>
+</ul></li>
+</ul></li>
+<li><em>Unrelated to a session:</em> Browser updates,
+certificate revocation list updates.
+<ul>
+<li>Treat as a single global state
+shared between public mode and
+private mode.</li>
+</ul></li>
+</ol>
 
-<p>Q: What happens if public state bleeds over
-      into private state?
-   A: Easier for web attacker to link private
-      session to public session.
-          *Ex: A client-side SSL certificate
-           that's installed in public mode
-           can identify the user in private
-           mode.</p>
+<p>What do browsers actually implement?</p>
 
-<p>Q: What happens if private state bleeds
-      over into public state?
-   A: This helps both a web attacker and a
-      local attacker: observing state from
-      a public session will reveal information
-      about private sessions!</p>
+<ul>
+<li>Each browser is, of course, different.</li>
+<li>Moreover, some state "bleeds over" in one
+direction but not another! There isn't a
+strict partitioning between private mode
+and public mode state.</li>
+</ul>
 
-<p>Q: What should happen to state while user
-      remains in a private mode session?
-   A: Most browsers allow state to persist
-      within a private mode session (see
-      Table 3).
-          *A "no" entry means that a web
-           attacker might be able to detect
-           private mode browsing!</p>
+<p><em>Q&amp;A:</em></p>
 
-<pre><code>    Q: Why is it OK to allow cookies
-       in private browsing mode?
-    A: It's convenient for users to be
-       able to create ephemeral sessions
-       in private browsing mode---the
-       browser will delete the associated
-       cookies when the private session
-       ends.
-</code></pre>
+<ul>
+<li><strong>Q:</strong> What happens if public state bleeds over
+into private state?</li>
+<li><strong>A:</strong> Easier for web attacker to link private
+session to public session.
+<ul>
+<li><em>Ex:</em> A client-side SSL certificate
+that's installed in public mode
+can identify the user in private
+mode.</li>
+</ul></li>
+<li><strong>Q:</strong> What happens if private state bleeds
+over into public state?</li>
+<li><strong>A:</strong> This helps both a web attacker and a
+local attacker: observing state from
+a public session will reveal information
+about private sessions!</li>
+<li><strong>Q:</strong> What should happen to state while user
+remains in a private mode session?</li>
+<li><strong>A:</strong> Most browsers allow state to persist
+within a private mode session (see
+Table 3).
+<ul>
+<li>A "no" entry means that a web
+attacker might be able to detect
+private mode browsing!</li>
+<li><strong>Q:</strong> Why is it OK to allow cookies
+in private browsing mode?</li>
+<li><strong>A:</strong> It's convenient for users to be
+able to create ephemeral sessions
+in private browsing mode---the
+browser will delete the associated
+cookies when the private session
+ends.</li>
+</ul></li>
+<li><strong>Q:</strong> What should happen to state across
+private mode sessions?</li>
+<li><strong>A:</strong> Ideally, each private session should
+start with a blank slate---if state
+carries over between multiple private
+sessions, this increases the likelihood
+that the user can be fingerprinted!
+However, since some kinds of state
+can leak from private-to-public,
+and some kinds of state can leak
+from public-to-private, some kinds
+of state can indeed persist across
+private mode sessions. [Ex: certificates,
+downloaded items.]
+<ul>
+<li>So, think of each private mode
+session as sharing some state
+with a single public mode.</li>
+</ul></li>
+</ul>
 
-<p>Q: What should happen to state across
-      private mode sessions?
-   A: Ideally, each private session should
-      start with a blank slate---if state
-      carries over between multiple private
-      sessions, this increases the likelihood
-      that the user can be fingerprinted!
-      However, since some kinds of state
-      can leak from private-to-public,
-      and some kinds of state can leak
-      from public-to-private, some kinds
-      of state can indeed persist across
-      private mode sessions. [Ex: certificates,
-      downloaded items.]
-          *So, think of each private mode
-           session as sharing some state
-           with a single public mode.</p>
+<h3>Browser extensions</h3>
 
-<p>Browser extensions and plugins are special.
-   -They are privileged code that can access
-    sensitive state.
-   -They are not subject to the same-origin
-    policy or other browser security checks.
-   -Also, they are often developed by someone
-    other than the browser vendor!
-          *Thus, they might not be aware of
-           private mode semantics, or they
-           might misimplement the intended
-           policy.
-          *However, plugins are probably
-           going to become extinct in the
-           near future! HTML5 offers new
-           features which provide native
-           support for features that used
-           to require Flash, applets,
-           Silverlight, etc.
-           [Ref: http://msdn.microsoft.com/en-us/library/ie/hh968248(v=vs.85).aspx]
-                Multimedia: <video>, <audio>
-                Graphics: <canvas>, WebGL
-                Offline storage: DOM storage
-                Network: Web sockets, CORS</p>
+<p>Browser extensions and plugins are special.</p>
+
+<ul>
+<li>They are privileged code that can access
+sensitive state.</li>
+<li>They are not subject to the same-origin
+policy or other browser security checks.</li>
+<li>Also, they are often developed by someone
+other than the browser vendor!
+<ul>
+<li>Thus, they might not be aware of
+private mode semantics, or they
+might misimplement the intended
+policy.</li>
+<li>However, plugins are probably
+going to become extinct in the
+near future! HTML5 offers new
+features which provide native
+support for features that used
+to require Flash, applets,
+Silverlight, etc.
+<a href="http://msdn.microsoft.com/en-us/library/ie/hh968248(v=vs.85).aspx">Ref</a>
+<ul>
+<li>Multimedia: <code>&lt;video&gt;</code>, <code>&lt;audio&gt;</code></li>
+<li>Graphics: <code>&lt;canvas&gt;</code> WebGL</li>
+<li>Offline storage: DOM storage</li>
+<li>Network: Web sockets, CORS</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h2>Current private browsing modes</h2>
 
 <p>The paper was written in 2010---what's the
-current state of private browsing?
-   -Private browsing is still tricky to
-    get right!
-         *Ex: Firefox bug fix from January
-          2014: The pdf.js extension was
-          allowing public cookies to leak
-          into private-mode HTTP fetches.
-          [Ref: https://github.com/mozilla/pdf.js/issues/4234]
-               -The extension wasn't checking
-                whether private browsing mode
-                was enabled!
-         *Ex: Open Firefox bug from 2011: If
-          you visit a page in private browsing
-          mode and then close the window, you
-          can go to about:memory and find information
-          about the window you supposedly closed
-          (e.g., about:memory will list the URL
-          for the window).
-          [Ref: https://bugzilla.mozilla.org/show_bug.cgi?id=709326]
-               -The problem is that window objects
-                are lazily garbage collected, so
-                closing the window doesn't force
-                a synchronous garbage collection
-                for the window.
-               -The bug was "deprioritized when it
-                became clear that the potential solution
-                [was] more involved than original
-                anticipated"; in response, a developer
-                said "That is very sad to hear. This
-                can pretty much defeat the purpose of
-                things such as sessionstore forgetting
-                about closed private windows, etc."
-   -Off-the-shelf forensics tools can find evidence
-    of private browser sessions.
-         *Ex: Magnet's Internet Evidence Finder
-          [Ref: http://www.magnetforensics.com/how-private-is-internet-explorers-inprivate-browsing-first-define-private/ 
-                http://www.magnetforensics.com/how-does-chromes-incognito-mode-affect-digital-forensics/]
-          This tool finds private session artifacts
-          for IE, Chrome, and Firefox.
-               -During a private session, IE stores
-                objects in the file system. Those
-                objects are deleted upon private
-                session close, but the storage space
-                is not wiped, so private data remains
-                in unallocated disk space.
-               -Chrome and Firefox use in-memory
-                SQLite databases during private
-                browsing, so they leave fewer
-                artifacts in the file system. However,
-                like all browsers, they leave artifacts
-                in the page file.</p>
+current state of private browsing?</p>
+
+<ul>
+<li>Private browsing is still tricky to
+get right!
+<ul>
+<li><em>Ex:</em> Firefox bug fix from January
+2014: The pdf.js extension was
+allowing public cookies to leak
+into private-mode HTTP fetches.
+<a href="https://github.com/mozilla/pdf.js/issues/4234">Ref</a>
+<ul>
+<li>The extension wasn't checking
+whether private browsing mode
+was enabled!</li>
+</ul></li>
+<li><em>Ex:</em> Open Firefox bug from 2011: If
+you visit a page in private browsing
+mode and then close the window, you
+can go to about:memory and find information
+about the window you supposedly closed
+(e.g., about:memory will list the URL
+for the window).
+<a href="https://bugzilla.mozilla.org/show_bug.cgi?id=709326">Ref</a>
+<ul>
+<li>The problem is that window objects
+are lazily garbage collected, so
+closing the window doesn't force
+a synchronous garbage collection
+for the window.</li>
+<li>The bug was "deprioritized when it
+became clear that the potential solution
+was more involved than original
+anticipated"; in response, a developer
+said <em>"That is very sad to hear. This
+can pretty much defeat the purpose of
+things such as sessionstore forgetting
+about closed private windows, etc."</em></li>
+</ul></li>
+</ul></li>
+<li>Off-the-shelf forensics tools can find evidence
+of private browser sessions.
+<ul>
+<li><em>Ex:</em> Magnet's Internet Evidence Finder 
+<a href="http://www.magnetforensics.com/how-private-is-internet-explorers-inprivate-browsing-first-define-private/">[1]</a>, 
+<a href="http://www.magnetforensics.com/how-does-chromes-incognito-mode-affect-digital-forensics/">[2]</a>,
+finds private session artifacts
+for IE, Chrome, and Firefox.
+<ul>
+<li>During a private session, IE stores
+objects in the file system. Those
+objects are deleted upon private
+session close, but the storage space
+is not wiped, so private data remains
+in unallocated disk space.</li>
+<li>Chrome and Firefox use in-memory
+SQLite databases during private
+browsing, so they leave fewer
+artifacts in the file system. However,
+like all browsers, they leave artifacts
+in the page file.</li>
+</ul></li>
+</ul></li>
+</ul>
