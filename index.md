@@ -26,4 +26,4 @@ Lecture notes from 6.858, taught by [Prof. Nickolai Zeldovich](http://people.csa
  * Lecture **20**: [Mobile phone security](l20-android.html): Android applications, activities, services, content providers, broadcast receivers, intents, permissions, labels, reference monitor, broadcast intents
  * Lecture **21**: [Information flow tracking](l21-taintdroid.html): TaintDroid, Android data leaks, information flow control, taint tracking, taint flags, implicit flows, x86 taint tracking, TightLip
  * Lecture **22**: **MIT's IS&T** _guest lecture_ by Mark Silis and David LaPorte, MIT IS&T
- * Lecture **23**: [Security economics](l23-click-trajectories.html): spam value chain
+ * Lecture **23**: [Security economics](l23-click-trajectories.html): economics of cyber-attacks, the spam value chain, advertising, click-support, realization, CAPTCHAs, botnets, payment protocols, ethics
