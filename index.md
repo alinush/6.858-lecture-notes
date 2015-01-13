@@ -23,9 +23,9 @@ Lecture notes from 6.858, taught by [Prof. Nickolai Zeldovich](http://people.csa
  * Lecture **18**: [Private browsing](l18-priv-browsing.html): private browsing mode, local and web attackers, VM-level privacy, OS-level privacy,  OS-level privacy, what browsers implement, browser extensions 
  * Lecture **19**: **Tor** _guest lecture_ by Nick Mathewson, Tor Project
    + 6.858 notes from 2012 on [Anonymous communication](l19-tor.html): onion routing, Tor design, Tor circuits, Tor streams, Tor hidden services, blocking Tor, dining cryptographers networks (DC-nets)
+ * Lecture **20**: [Mobile phone security](l20-android.html): Android applications, activities, services, content providers, broadcast receivers, intents, permissions, labels, reference monitor, broadcast intents
 
 <!--
- * Lecture **20**: [Mobile phone security](l20-android.html): Android
  * Lecture **21**: [Information flow tracking](l21-taintdroid.html): TaintDroid
  * Lecture **22**: _Guest lecture_ on _MIT's IS&T_ by Mark Silis and David LaPorte
  * Lecture **23**: [Security economics](l23-click-trajectories.html): spam value chain
