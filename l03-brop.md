@@ -742,7 +742,7 @@ Defenses against BROP
 More info on ROP and x86 calling conventions
 --------------------------------------------
 
- - http://codearcana.com/posts/2013/05/21/a-brief-introduction-to-x86-calling-conventions.html
- - http://codearcana.com/posts/2013/05/28/introduction-to-return-oriented-programming-rop.html
- - http://www.slideshare.net/saumilshah/dive-into-rop-a-quick-introduction-to-return-oriented-programming
- - https://cseweb.ucsd.edu/~hovav/dist/rop.pdf
+ - [A brief introduction to x86 calling conventions](http://codearcana.com/posts/2013/05/21/a-brief-introduction-to-x86-calling-conventions.html)
+ - [Introduction to return oriented programming](http://codearcana.com/posts/2013/05/28/introduction-to-return-oriented-programming-rop.html)
+ - [Dive into ROP: A quick introduction to return oriented programming](http://www.slideshare.net/saumilshah/dive-into-rop-a-quick-introduction-to-return-oriented-programming)
+ - [Return-Oriented Programming: Systems, Languages, and Applications](https://cseweb.ucsd.edu/~hovav/dist/rop.pdf)
