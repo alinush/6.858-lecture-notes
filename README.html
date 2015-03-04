@@ -1,32 +1,32 @@
 <h1>Computer systems security notes (6.858, Fall 2014)</h1>
 
-<p>Lecture notes from 6.858, taught by <a href="http://people.csail.mit.edu/nickolai/">Prof. Nickolai Zeldovich</a> and <a href="http://research.microsoft.com/en-us/people/mickens/">Prof. James Mickens</a>.</p>
+<p>Lecture notes from 6.858, taught by <a href="http://people.csail.mit.edu/nickolai/">Prof. Nickolai Zeldovich</a> and <a href="http://research.microsoft.com/en-us/people/mickens/">Prof. James Mickens</a> in 2014. These lecture notes are slightly modified from the ones posted on the 6.858 <a href="http://css.csail.mit.edu/6.858/2014/schedule.html">course website</a>.</p>
 
 <ul>
 <li>Lecture <strong>1</strong>: <a href="l01-intro.html">Introduction</a>: what is security, what's the point, no perfect security, policy, threat models, assumptions, mechanism, buffer overflows</li>
 <li>Lecture <strong>2</strong>: <a href="l02-baggy.html">Control hijacking attacks</a>: buffer overflows, stack canaries, bounds checking, electric fences, fat pointers, shadow data structure, Jones &amp; Kelly, baggy bounds checking</li>
 <li>Lecture <strong>3</strong>: <a href="l03-brop.html">More baggy bounds and return oriented programming</a>: costs of bounds checking, non-executable memory, address-space layout randomization (ASLR), return-oriented programming (ROP), stack reading, blind ROP, gadgets</li>
 <li>Lecture <strong>4</strong>: <a href="l04-okws.html">OKWS</a>: privilege separation, Linux discretionary access control (DAC), UIDs, GIDs, setuid/setgid, file descriptors, processes, the Apache webserver, chroot jails, remote procedure calls (RPC)</li>
-<li>Lecture <strong>5</strong>: <em>Guest lecture</em> on <em>penetration testing</em> by Paul Youn, iSEC Partners</li>
+<li>Lecture <strong>5</strong>: <strong>Penetration testing</strong> <em>guest lecture</em> by Paul Youn, iSEC Partners</li>
 <li>Lecture <strong>6</strong>: <a href="l06-capsicum.html">Capsicum</a>: confused deputy problem, ambient authority, capabilities, sandboxing, discretionary access control (DAC), mandatory access control (MAC), Capsicum</li>
 <li>Lecture <strong>7</strong>: <a href="l07-nacl.html">Native Client (NaCl)</a>: sandboxing x86 native code, software fault isolation, reliable disassembly, x86 segmentation</li>
 <li>Lecture <strong>8</strong>: <a href="l08-web-security.html">Web Security, Part I</a>: modern web browsers, same-origin policy, frames, DOM nodes, cookies, cross-site request forgery (CSRF) attacks, DNS rebinding attacks, browser plugins</li>
 <li>Lecture <strong>9</strong>: <a href="l09-web-defenses.html">Web Security, Part II</a>: cross-site scripting (XSS) attacks, XSS defenses, SQL injection atacks, Django, session management, cookies, HTML5 local storage, HTTP protocol ambiguities, covert channels</li>
-<li>Lecture <strong>10</strong>: <em>Guest lecture</em> on <em>symbolic execution</em> by Prof. Armando Solar-Lezama, MIT CSAIL</li>
-<li>Lecture <strong>11</strong>: <em>Guest lecture</em> on <em>Ur/Web</em> by Prof. Adam Chlipala, MIT, CSAIL</li>
+<li>Lecture <strong>10</strong>: <strong>Symbolic execution</strong> <em>guest lecture</em> by Prof. Armando Solar-Lezama, MIT CSAIL</li>
+<li>Lecture <strong>11</strong>: <strong>Ur/Web</strong> <em>guest lecture</em> by Prof. Adam Chlipala, MIT, CSAIL</li>
 <li>Lecture <strong>12</strong>: <a href="l12-tcpip.html">TCP/IP security</a>: threat model, sequence numbers and attacks, connection hijacking attacks, SYN flooding, bandwidth amplification attacks, routing</li>
 <li>Lecture <strong>13</strong>: <a href="l13-kerberos.html">Kerberos</a>: Kerberos architecture and trust model, tickets, authenticators, ticket granting servers, password-changing, replication, network attacks, forward secrecy</li>
-<li>Lecture <strong>14</strong>: <a href="l14-forcehttps.html">ForceHTTPS</a>: ForceHTTPS</li>
-<li>Lecture <strong>15</strong>: <em>Guest lecture</em> on <em>medical software</em> by Prof. Kevin Fu, U. Michigan</li>
-<li>Lecture <strong>16</strong>: <a href="l16-timing-attacks.html">Timing attacks</a>: timing attacks</li>
-<li>Lecture <strong>17</strong>: <a href="l17-authentication.html">User authentication</a>: what you have, what you know, what you are</li>
-<li>Lecture <strong>18</strong>: <a href="l18-priv-browsing.html">Private browsing</a>: private browsing modes</li>
-<li>Lecture <strong>19</strong>: <em>Guest lecture</em> on <em>Tor</em> by Nick Mathewson, Tor Project
+<li>Lecture <strong>14</strong>: <a href="l14-forcehttps.html">ForceHTTPS</a>: certificates, HTTPS, Online Certificate Status Protocol (OCSP), ForceHTTPS</li>
+<li>Lecture <strong>15</strong>: <strong>Medical software</strong> <em>guest lecture</em> by Prof. Kevin Fu, U. Michigan</li>
+<li>Lecture <strong>16</strong>: <a href="l16-timing-attacks.html">Timing attacks</a>: side-channel attacks, RSA encryption, RSA implementation, modular exponentiation, Chinese remainder theorem (CRT), repeated squaring, Montgomery representation, Karatsuba multiplication, RSA blinding, other timing attacks</li>
+<li>Lecture <strong>17</strong>: <a href="l17-authentication.html">User authentication</a>: what you have, what you know, what you are, passwords, challenge-response, usability, deployability, security, biometrics, multi-factor authentication (MFA), MasterCard's CAP reader</li>
+<li>Lecture <strong>18</strong>: <a href="l18-priv-browsing.html">Private browsing</a>: private browsing mode, local and web attackers, VM-level privacy, OS-level privacy,  OS-level privacy, what browsers implement, browser extensions </li>
+<li>Lecture <strong>19</strong>: <strong>Tor</strong> <em>guest lecture</em> by Nick Mathewson, Tor Project
 <ul>
-<li>6.858 notes from 2012 on <a href="l19-tor.html">Anonymous communication</a>: Tor</li>
+<li>6.858 notes from 2012 on <a href="l19-tor.html">Anonymous communication</a>: onion routing, Tor design, Tor circuits, Tor streams, Tor hidden services, blocking Tor, dining cryptographers networks (DC-nets)</li>
 </ul></li>
-<li>Lecture <strong>20</strong>: <a href="l20-android.html">Mobile phone security</a>: Android</li>
-<li>Lecture <strong>21</strong>: <a href="l21-taintdroid.html">Information flow tracking</a>: TaintDroid</li>
-<li>Lecture <strong>22</strong>: <em>Guest lecture</em> on <em>MIT's IS&amp;T</em> by Mark Silis and David LaPorte</li>
-<li>Lecture <strong>23</strong>: <a href="l23-click-trajectories.html">Security economics</a>: spam value chain</li>
+<li>Lecture <strong>20</strong>: <a href="l20-android.html">Mobile phone security</a>: Android applications, activities, services, content providers, broadcast receivers, intents, permissions, labels, reference monitor, broadcast intents</li>
+<li>Lecture <strong>21</strong>: <a href="l21-taintdroid.html">Information flow tracking</a>: TaintDroid, Android data leaks, information flow control, taint tracking, taint flags, implicit flows, x86 taint tracking, TightLip</li>
+<li>Lecture <strong>22</strong>: <strong>MIT's IS&amp;T</strong> <em>guest lecture</em> by Mark Silis and David LaPorte, MIT IS&amp;T</li>
+<li>Lecture <strong>23</strong>: <a href="l23-click-trajectories.html">Security economics</a>: economics of cyber-attacks, the spam value chain, advertising, click-support, realization, CAPTCHAs, botnets, payment protocols, ethics</li>
 </ul>
