@@ -27,3 +27,29 @@ Lecture notes from 6.858, taught by [Prof. Nickolai Zeldovich](http://people.csa
  * Lecture **21**: [Information flow tracking](l21-taintdroid.html): TaintDroid, Android data leaks, information flow control, taint tracking, taint flags, implicit flows, x86 taint tracking, TightLip
  * Lecture **22**: **MIT's IS&T** _guest lecture_ by Mark Silis and David LaPorte, MIT IS&T
  * Lecture **23**: [Security economics](l23-click-trajectories.html): economics of cyber-attacks, the spam value chain, advertising, click-support, realization, CAPTCHAs, botnets, payment protocols, ethics
+
+Papers
+------
+
+List of papers we read ([papers/](papers/)):
+
+ - [Baggy bounds checking](papers/baggy.pdf)
+ - [Hacking blind](papers/brop.pdf)
+ - [OKWS](papers/okws.pdf)
+ - [The confused deputy](papers/confused-deputy.pdf) (or why capabilities might have been invented)
+ - [Capsicum](papers/capsicum.pdf) (capabilities)
+ - [Native Client](papers/nacl.pdf) (sandboxing x86 code)
+ - [OWASP Top 10](papers/owasp-top-10.pdf), the most critical web application security risks
+ - [KLEE](papers/klee.pdf) (symbolic execution)
+ - [Ur/Web](papers/urweb.pdf) (functional programming for the web)
+ - [A look back at "Security problems in the TCP/IP protocol suite"](papers/lookback-tcpip.pdf)
+ - [Kerberos](papers/kerberos.pdf): An authentication service for open network systems
+ - [ForceHTTPs](papers/forcehttps.pdf)
+ - [Trustworthy Medical Device Software](papers/medical-sw.pdf)
+ - [Remote timing attacks are practical](papers/brumley-timing.pdf)
+ - [The quest to replace passwords](papers/passwords.pdf)
+ - [Private browsing modes](papers/private-browsing.pdf)
+ - [Tor](papers/tor-design.pdf): the second-generation onion router
+ - [Understanding android security](papers/android.pdf)
+ - [TaintDroid](papers/taintdroid.pdf): an information-flow tracking system for realtime privacy monitoring on smartphones
+ - [Click trajectories](papers/trajectories.pdf): End-to-end analysis of the spam value chain
