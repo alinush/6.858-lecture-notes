@@ -216,7 +216,7 @@ _Example:_ Ensure top-secret programs can't reveal classified information.
        Object --------> Allow?
                          ^
                          |
-       Policy ------------+
+       Policy -----------+
 
  * _Note:_ many systems have aspects of both DAC + MAC in them.
    + E.g., Unix user IDs are "DAC", but one can argue firewalls are "MAC".
@@ -242,7 +242,7 @@ _Example:_ Ensure top-secret programs can't reveal classified information.
    + Can be difficult to determine security impact of syscall based on args.
      - What does a pathname refer to? Symlinks, hard links, race conditions, ..
      - (Although MacOSX's sandbox provides a bit more information)
-   + **_Advantage:** any user can sandbox an arbitrary piece of code, finally!
+   + **Advantage:** any user can sandbox an arbitrary piece of code, finally!
    + **Limitation:** programmer must separately write the policy + application code.
    + **Limitation:** some operations can only be filtered at coarse granularity.
      - E.g., POSIX `shm` in MacOSX's filter language, according to Capsicum paper.
