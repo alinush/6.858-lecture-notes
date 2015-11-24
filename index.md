@@ -50,6 +50,11 @@ List of papers we read ([papers/](papers/)):
  - [The quest to replace passwords](papers/passwords.pdf)
  - [Private browsing modes](papers/private-browsing.pdf)
  - [Tor](papers/tor-design.pdf): the second-generation onion router
- - [Understanding android security](papers/android.pdf)
+ - [Understanding Android security](papers/android.pdf)
  - [TaintDroid](papers/taintdroid.pdf): an information-flow tracking system for realtime privacy monitoring on smartphones
  - [Click trajectories](papers/trajectories.pdf): End-to-end analysis of the spam value chain
+
+Other papers
+------------
+
+ - [The Chinese Wall Security Policy](papers/chinese-wall-sec-pol.pdf)

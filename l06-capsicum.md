@@ -256,6 +256,7 @@ _Example:_ Ensure top-secret programs can't reveal classified information.
    + Problematic if app developer needs to maintain both code and policy.
    + For app developers, might help clarify policy.
    + Less-centralized "MAC" systems (Seatbelt, `seccomp`) provide a compromise.
+ * **TODO:** Also take a look at [The Chinese Wall Security Policy](papers/chinese-wall-sec-pol.pdf)
 
 ### Plan 3: Capabilities (Capsicum).
 
@@ -426,4 +427,5 @@ References
  * [Apple sandbox guide](http://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf)
  * [seccomp_filter](http://git.kernel.org/?p=linux/kernel/git/torvalds/linux-2.6.git;a=blob;f=Documentation/prctl/seccomp_filter.txt;hb=HEAD)
  * [Mandatory integrity control](http://en.wikipedia.org/wiki/Mandatory_Integrity_Control)
+ * [The Chinese Wall Security Policy](papers/chinese-wall-sec-pol.pdf)
 
