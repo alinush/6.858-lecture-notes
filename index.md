@@ -28,6 +28,10 @@ Lecture notes from 6.858, taught by [Prof. Nickolai Zeldovich](http://people.csa
  * Lecture **22**: **MIT's IS&T** _guest lecture_ by Mark Silis and David LaPorte, MIT IS&T
  * Lecture **23**: [Security economics](l23-click-trajectories.html): economics of cyber-attacks, the spam value chain, advertising, click-support, realization, CAPTCHAs, botnets, payment protocols, ethics
 
+### New notes from 2015
+
+ * Lecture **8**: [Intel Software Guard Extensions (SGX)](2015/l08-sgx.html): isolation, Iago attacks, enclaves, attestation, Haven
+
 Papers
 ------
 
@@ -53,6 +57,10 @@ List of papers we read ([papers/](papers/)):
  - [Understanding Android security](papers/android.pdf)
  - [TaintDroid](papers/taintdroid.pdf): an information-flow tracking system for realtime privacy monitoring on smartphones
  - [Click trajectories](papers/trajectories.pdf): End-to-end analysis of the spam value chain
+
+### "Newer" papers
+
+ - [Iago Attacks: Why the System Call API is a Bad Untrusted RPC Interface](https://cseweb.ucsd.edu/~hovav/dist/iago.pdf)
 
 Other papers
 ------------

@@ -1,0 +1,438 @@
+<h1>SGX and Haven</h1>
+
+<p>Why are we reading this paper? <strong>TODO:</strong> Which paper? SGX or Haven?</p>
+
+<ul>
+<li>Advanced hardware isolation mechanism
+<ul>
+<li>Last paper in our tour of isolation mechanisms</li>
+</ul></li>
+<li>Strong threat model that is relevant in practice
+<ul>
+<li>Many desktops run malware</li>
+<li>Malware may control complete OS</li>
+</ul></li>
+<li>Uses cutting-edge technology (Intel SGX)
+<ul>
+<li>But, no deployed experience with SGX yet</li>
+<li>May have design and implementation flaws</li>
+<li>First hardware is available (see ref below)</li>
+</ul></li>
+</ul>
+
+<h2>SGX Goal</h2>
+
+<ul>
+<li>Even when OS is compromised, app can still keep secrets
+<ul>
+<li>Maybe not whole OS compromised</li>
+<li>But maybe attacker is running a key logger</li>
+</ul></li>
+<li>Target applications:
+<ul>
+<li>Logging in to your bank
+<ul>
+<li>Secure: OS/Key logger cannot steal your password+PIN to login</li>
+</ul></li>
+<li>Video/music player for copyrighted content (DRM)
+<ul>
+<li>Secure: OS cannot steal key to decrypt content</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p><em>Ambitious goal:</em></p>
+
+<ul>
+<li>App relies on OS
+<ul>
+<li>How to defend against a malicious OS?</li>
+</ul></li>
+<li>OS interface is wide
+<ul>
+<li>How to check for app that OS behaves appropriately?</li>
+</ul></li>
+<li>Much opportunity for "Iago" attacks
+<ul>
+<li>See paper "Iago Attacks: Why the System Call API is a Bad Untrusted RPC Interface" paper <a href="iago">here</a> or on our <a href="../index.html">front page</a>.</li>
+</ul></li>
+</ul>
+
+<p><em>Iago attacks: attacks that untrusted OS can use to attack an application</em></p>
+
+<ul>
+<li>OS modifies <code>getpid()</code> and <code>time()</code> to return a different number, same number
+<ul>
+<li><code>getpid()</code> and <code>time()</code> often used to seed a pseudo random generator</li>
+</ul></li>
+<li>OS can confuse server running SSL
+<ul>
+<li>OS can record packets from a successful connection</li>
+<li>OS can cause the next of instance of SSL to use same server nonce
+<ul>
+<li>By returning same value for <code>time()</code> and <code>getpid()</code> as for earlier connection</li>
+</ul></li>
+<li>OS can replays packets
+<ul>
+<li>SSL server thinks it is a fresh connection, but it isn't</li>
+<li>Maybe launch a man-in-the-middle attack</li>
+</ul></li>
+</ul></li>
+<li>OS modifies <code>mmap()</code> to map a physical page that the OS controls over app stack
+<ul>
+<li><code>malloc()</code> calls <code>mmap()</code></li>
+<li>OS can run arbitrary code</li>
+<li>OS can read app secrets (e.g., private key of SSL connection)</li>
+</ul></li>
+<li><strong>Lesson:</strong> simple systems calls (e.g., getpid and time) can cause trouble
+<ul>
+<li>App must be written defensively</li>
+<li>Protecting legacy apps against malicious OS seems hard</li>
+</ul></li>
+</ul>
+
+<p>Much research on defending against malicious OS</p>
+
+<ul>
+<li>Some use TPM or late boot</li>
+<li>Some use a trusted hypervisor</li>
+<li>Some use special processors</li>
+<li>Little impact---mostly an intellectually-challenging exercise</li>
+<li>Now Intel's Skylake includes <strong>SGX</strong> (see ref below)
+<ul>
+<li>It provides hardware mechanism to help defend against Iago attacks</li>
+</ul></li>
+</ul>
+
+<h2>SGX Threat model</h2>
+
+<ul>
+<li>Attacker controls OS</li>
+<li>Attacker can observe traffic between processor and memory
+<ul>
+<li>Every component that is not the processor is untrusted</li>
+</ul></li>
+<li>Intel is trusted
+<ul>
+<li>Chip works correctly</li>
+<li>Private key isn't compromised</li>
+</ul></li>
+<li>Side channels cannot be exploited</li>
+</ul>
+
+<p><strong>SGX: Software Guard Extensions</strong></p>
+
+<ul>
+<li><strong>Enclave:</strong> trusted execution environment inside a process
+<ul>
+<li>Processor ensures that enclave memory isn't accessible to OS, BIOS, etc.</li>
+</ul></li>
+<li><strong>Attestation</strong>
+<ul>
+<li>Processor signs content of enclave with private key baked into chip</li>
+<li>Verifier uses Intel's public key to check signature</li>
+</ul></li>
+<li><strong>Sealing</strong>
+<ul>
+<li>Scheme for sealing enclave on termination, and unsealing later</li>
+<li><strong>TODO:</strong> Do they mean sort of like "paging out" or stopping, saving to disk and later restoring it and continue running it?</li>
+</ul></li>
+</ul>
+
+<h3>Enclave</h3>
+
+<ul>
+<li>Figure 1 in Haven paper</li>
+<li><code>ECREATE</code> creates an empty enclave
+<ul>
+<li>starting virtual address and size</li>
+</ul></li>
+<li><em>EPC:</em> enclave page cache
+<ul>
+<li>Region in physical memory</li>
+<li>Processor's memory encryption interface
+<ul>
+<li>encrypts/decrypts when writing/reading to/from EPC</li>
+<li>Also integrity protected</li>
+</ul></li>
+<li><code>EADD</code> to add an EPC page to enclave</li>
+</ul></li>
+<li>Processor maintains a map (<em>EPCM</em>) that for each EPC page records:
+<ul>
+<li>page type (REG, ...), the enclave ID, the virtual address for the page, and permissions</li>
+<li>EPCM is accessible only to processor</li>
+<li>Map is consulted on each enclave page access
+<ul>
+<li>Is the page in enclave mode?</li>
+<li>Does page belong to enclave?</li>
+<li>Is the page for the accessed virtual address?</li>
+<li>Does access agree with page permissions?</li>
+</ul></li>
+</ul></li>
+<li>Paging an EPC page to external storage
+<ul>
+<li>OS executes <code>EWD</code> to evict page into buffer
+<ul>
+<li>encrypted, version number, etc.</li>
+</ul></li>
+<li>OS can write buffer to external storage</li>
+<li>OS executes <code>ELDB</code> to load encrypted page into EPC
+<ul>
+<li>use version number to detect roll-back attacks</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p>Starting enclave (<code>EXTEND</code>, <code>EINIT</code>):</p>
+
+<ul>
+<li>Processor keeps a cryptographic log of how the enclave was built
+_ <code>EXTEND</code> adds 256-byte region to log</li>
+<li>Log contains content (code, data, stack, heap), location of each page, security flags </li>
+<li><code>EINIT</code> takes as argument a <code>SIGSTRUCT</code>
+<ul>
+<li>signed by a sealing authority (enclave writer)</li>
+<li>includes: expected signed hash of enclave and public key of enclave owner</li>
+<li><code>EINIT</code> verifies signature and hash</li>
+<li>Enclave identity stored in <code>SECS</code></li>
+</ul></li>
+</ul>
+
+<p><strong>Attestation:</strong> Remote party can verify that enclave runs correct code</p>
+
+<ul>
+<li>An enclave gets its keys use <code>EGETKEY</code>
+<ul>
+<li>keys for encrypting and sealing</li>
+</ul></li>
+<li><code>EREPORT</code> generates a signed report
+<ul>
+<li>Report contains the hash of log and a public key for enclave
+<ul>
+<li>public is in enclave-provided data in report?</li>
+</ul></li>
+<li>This report can be communicated to another enclave</li>
+<li>The receiving enclave can verify the report using the public key in the enclave</li>
+</ul></li>
+<li>A <em>special Quoting enclave</em> can create a signed "quote" using processor's private key
+<ul>
+<li>Uses a group signature key so that individual processors cannot be identified</li>
+</ul></li>
+</ul>
+
+<p>Entering/exit enclave:</p>
+
+<ul>
+<li>enter using ENTER with a thread control structure (TCS)</li>
+<li>exit: EEXIT, interrupt, or exception</li>
+<li>resume an enclave using ERESUME</li>
+</ul>
+
+<p>Protected bank client (hypothetical and simplified)</p>
+
+<ul>
+<li><strong>Goal:</strong> Prevent OS from stealing user's password</li>
+<li>Assume a secure path from keyboard to enclave (Intel ME?)</li>
+<li>Client downloads bank application and runs it</li>
+<li>Bank application creates enclaves with code+data
+<ul>
+<li>code includes reading from keyboard, SSL, etc.</li>
+<li>generate a quote </li>
+<li>connect to server, setup secure channel (e.g., SSL), and send quote</li>
+</ul></li>
+<li>Server verifies quote
+<ul>
+<li>server knows runs that client started with the right software</li>
+<li>i.e. not some rogue client that maybe emails user password to adversary</li>
+</ul></li>
+<li>Server sends challenge
+<ul>
+<li>client uses password to respond to challenge over SSL</li>
+<li>password inside enclave, encrypted</li>
+<li>OS cannot steal it</li>
+</ul></li>
+<li>Server checks challenge</li>
+</ul>
+
+<h2>SGX security discussion</h2>
+
+<ul>
+<li>Difficult to evaluate security
+<ul>
+<li>processors with SGX just have become available</li>
+<li>no experience with deployments</li>
+</ul></li>
+<li>TCB
+<ul>
+<li>Processor</li>
+<li>Fab of processor</li>
+<li>Intel's private key</li>
+</ul></li>
+<li>Iago attacks
+<ul>
+<li>Can OS read/write data inside enclave
+<ul>
+<li>Processor's EPC prevents this</li>
+</ul></li>
+<li>Can OS remap memory?
+<ul>
+<li>Processor's EPCM prevent this attack</li>
+</ul></li>
+<li>Can OS confuse application?
+<ul>
+<li>Client must be carefully written to rely on few OS functions</li>
+<li>Client needs a reliable source of randomness to implement SSL
+<ul>
+<li><code>RDRAND</code></li>
+</ul></li>
+<li>Client must be able to send and receive packets
+<ul>
+<li>check results</li>
+</ul></li>
+</ul></li>
+</ul></li>
+<li>Side channel attacks
+<ul>
+<li>Excluded by threat model, but possible in practice</li>
+<li>Hyperthreading</li>
+<li>Shared L3 cache</li>
+<li>Multi-socket</li>
+</ul></li>
+</ul>
+
+<h2>Haven</h2>
+
+<ul>
+<li>Use SGX for executing unmodified Windows applications in the cloud securely</li>
+<li>Securely means don't trust cloud provider</li>
+<li>Haven is a research project</li>
+</ul>
+
+<h3>Threat model</h3>
+
+<ul>
+<li>System admins control cloud software</li>
+<li>Remote attackers may control cloud software</li>
+<li>OS may launch "Iago" attacks
+<ul>
+<li>May pass arbitrary values to Haven</li>
+<li>May interrupt execution of Haven</li>
+</ul></li>
+<li>Hardware is implemented correctly
+<ul>
+<li>SGX is correct</li>
+</ul></li>
+</ul>
+
+<h3>Plan: shielded execution</h3>
+
+<ul>
+<li>Run applications in cloud with security equivalent to running application on own hardware
+<ul>
+<li>Don't trust cloud software</li>
+</ul></li>
+<li>Provide an application environment so that it can interact with untrusted software
+<ul>
+<li>Applications need to send packets</li>
+<li>Applications need to store files</li>
+<li>...</li>
+<li>Application needs operating systems</li>
+</ul></li>
+<li>Challenge
+<ul>
+<li>How to implement OS on top of host OS while stilling being resistant to Iago attacks</li>
+</ul></li>
+</ul>
+
+<p>Haven builds on two components</p>
+
+<ul>
+<li>Intel SGX</li>
+<li>Drawbridge
+<ul>
+<li>Small interface on top of which libOS implements Win32</li>
+<li>Small interface protects host OS from application (similar to native client)</li>
+<li>Haven protects application from host OS</li>
+</ul></li>
+</ul>
+
+<h3>Haven design (figure 2)</h3>
+
+<ul>
+<li>Implement Drawbridge's API so that it protects against Iago attacks</li>
+<li>Shield module implements API inside enclave
+<ul>
+<li>interacts with host OS using a narrow, untrusted API</li>
+<li>untrusted API is a subset of drawbridge's API (see figure 3)</li>
+</ul></li>
+<li>Untrusted runtime tunnels between Shield in enclave and host kernel
+<ul>
+<li>Also needed for bootstrap</li>
+</ul></li>
+<li>Host kernel contains SGX driver and drawbridge host
+<ul>
+<li>drawbridge host implements the narrow API using OS calls</li>
+</ul></li>
+</ul>
+
+<p>Shield services</p>
+
+<ul>
+<li>Virtual memory
+<ul>
+<li>Enclave starts at 0 (to handle null pointer deferences by app, libos)</li>
+<li>Tracking memory pages used by application/libos</li>
+<li>Adding/removing memory pages from enclave
+<ul>
+<li>Verifies that changes have been made correctly</li>
+</ul></li>
+<li>Never allows host to pick virtual-memory addresses</li>
+<li>Doesn't allow application and libos to allocate pages outside of enclave</li>
+</ul></li>
+<li>Storage
+<ul>
+<li>Final lab</li>
+</ul></li>
+<li>Threads
+<ul>
+<li>user-level scheduling (e.g., so that mutexes work)</li>
+<li>multiplexes threads on a fixed number of threads created at startup
+<ul>
+<li>Allocate a fixed number of TCSs at start</li>
+</ul></li>
+</ul></li>
+<li>Misc
+<ul>
+<li><code>RDRAND</code> for trusted source of randomness</li>
+<li>No fork</li>
+<li>No address space randomization</li>
+</ul></li>
+</ul>
+
+<h3>Discussion</h3>
+
+<ul>
+<li>Can Haven run unmodified apps?
+<ul>
+<li>No fork--minor problem on Windows?</li>
+<li>Cannot map an enclave page at several virtual addresses
+<ul>
+<li>Needed to modify applications</li>
+</ul></li>
+</ul></li>
+<li>Security?
+<ul>
+<li>Fuzzing testing untrusted interface?</li>
+</ul></li>
+</ul>
+
+<h2>References</h2>
+
+<ol>
+<li><a href="https://cseweb.ucsd.edu/~hovav/dist/iago.pdf" title="Iago attacks">Iago attacks</a></li>
+<li><a href="http://www.pdl.cmu.edu/SDI/2013/slides/rozas-SGX.pdf" title="SGX Overview">SGX Overview</a></li>
+<li><a href="https://software.intel.com/sites/default/files/article/413936/hasp-2013-innovative-instructions-and-software-model-for-isolated-execution.pdf" title="SGX Instructions overview">SGX Instructions Overview</a></li>
+<li><a href="https://jbeekman.nl/blog/2015/10/sgx-hardware-first-look/" title="SGX hardware">SGX Hardware</a></li>
+<li><a href="https://www.nccgroup.trust/uk/about-us/newsroom-and-events/blogs/2015/january/intel-software-guard-extensions-sgx-a-researchers-primer/" title="SGX Security discussion">SGX Security Discussion</a></li>
+<li><a href="http://research.microsoft.com/pubs/141071/asplos2011-drawbridge.pdf" title="Drawbridge">Drawbridge</a></li>
+</ol>
