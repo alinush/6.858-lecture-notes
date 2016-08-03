@@ -60,7 +60,7 @@ What goes wrong #1: Problems with the policy
    + Some adversary guessed Sarah Palin's high school, birthday, etc.
    + Policy amounts to: can log in with either password or security questions.
      - (no way to enforce _"Only if user forgets password, then ..."_)
- * _Example:_ [Mat Honan's accounts at Amazon, Apple, Google, etc.][honan]
+ * <a name="amazon-hack" />_Example:_ [Mat Honan's accounts at Amazon, Apple, Google, etc.][honan]
    + Gmail password reset: send a verification link to a backup email address.
      - Google helpfully prints part of the backup email address.
      - Mat Honan's backup address was his Apple `@me.com` account.
