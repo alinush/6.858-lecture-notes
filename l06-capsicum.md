@@ -93,8 +93,7 @@ What is the problem that the Capsicum authors are trying to solve with capabilit
 What sorts of applications might use sandboxing?
 ------------------------------------------------
 
-### OKWS
-
+ - OKWS!
  * Programs that deal with network input:
    + Put input handling code into sandbox.
  * Programs that manipulate data in complex ways:
